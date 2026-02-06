@@ -18,8 +18,16 @@ if not uploaded_files:
 dfs = []
 
 for file in uploaded_files:
-    df = pd.read_excel(file)
-    df.columns = df.columns.str.strip()
+    # Ler nomes das abas
+xls = pd.ExcelFile(file)
+sheet_name = st.selectbox(
+    f"Selecione a aba do ficheiro {file.name}",
+    xls.sheet_names
+)
+
+df = pd.read_excel(file, sheet_name=sheet_name)
+df.columns = df.columns.str.strip()
+
 
     df["Data"] = pd.to_datetime(df["Data"], errors="coerce")
     df = df.dropna(subset=["Data"])
