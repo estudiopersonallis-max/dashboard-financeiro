@@ -15,10 +15,7 @@ if not uploaded_files:
     st.stop()
 
 # ================= LEITURA =================
-dfs = []
-
-for file in uploaded_files:
-    # Ler nomes das abas
+# Ler nomes das abas
 xls = pd.ExcelFile(file)
 sheet_name = st.selectbox(
     f"Selecione a aba do ficheiro {file.name}",
@@ -28,9 +25,6 @@ sheet_name = st.selectbox(
 df = pd.read_excel(file, sheet_name=sheet_name)
 df.columns = df.columns.str.strip()
 
-
-    df["Data"] = pd.to_datetime(df["Data"], errors="coerce")
-    df = df.dropna(subset=["Data"])
 
     # ✅ USAR COLUNA VALOR PELO NOME (como no código que funcionava)
     df["Valor_Correto"] = pd.to_numeric(df["Valor"], errors="coerce").fillna(0)
