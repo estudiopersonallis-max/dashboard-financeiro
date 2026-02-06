@@ -14,19 +14,22 @@ if not uploaded_files:
     st.info("⬆️ Carregue pelo menos um ficheiro Excel")
     st.stop()
 
-# ================= LEITURA =================
-# Ler nomes das abas
-xls = pd.ExcelFile(file)
-sheet_name = st.selectbox(
-    f"Selecione a aba do ficheiro {file.name}",
-    xls.sheet_names
-)
+dfs = []
 
-df = pd.read_excel(file, sheet_name=sheet_name)
-df.columns = df.columns.str.strip()
+for file in uploaded_files:
+    xls = pd.ExcelFile(file)
 
+    sheet_name = st.selectbox(
+        f"Selecione a aba do ficheiro {file.name}",
+        xls.sheet_names
+    )
 
-    # ✅ USAR COLUNA VALOR PELO NOME (como no código que funcionava)
+    df = pd.read_excel(file, sheet_name=sheet_name)
+    df.columns = df.columns.str.strip()
+
+    df["Data"] = pd.to_datetime(df["Data"], errors="coerce")
+    df = df.dropna(subset=["Data"])
+
     df["Valor_Correto"] = pd.to_numeric(df["Valor"], errors="coerce").fillna(0)
 
     df["Dia"] = df["Data"].dt.day
@@ -37,19 +40,10 @@ df.columns = df.columns.str.strip()
 
 df = pd.concat(dfs, ignore_index=True)
 
-# ================= FILTRO MÊS =================
 meses = sorted(df["Mes"].unique())
 mes_sel = st.selectbox("📅 Selecione o mês", meses)
 df_mes = df[df["Mes"] == mes_sel]
-st.subheader("🧪 TESTE DE DADOS (DEBUG)")
-st.write("Soma da coluna Valor:")
-st.write(df_mes["Valor"].sum())
 
-st.write("Primeiras 5 linhas:")
-st.dataframe(df_mes[["Nome do cliente", "Valor", "Perdas"]].head())
-
-
-# ================= CLIENTES ATIVOS (CORRETO) =================
 clientes_por_cliente = (
     df_mes.groupby("Nome do cliente")["É Perda"]
     .any()
@@ -58,7 +52,6 @@ clientes_por_cliente = (
 clientes_ativos = (~clientes_por_cliente).sum()
 perdas = clientes_por_cliente.sum()
 
-# ================= KPIs =================
 total_valor = df_mes["Valor_Correto"].sum()
 ticket_medio = df_mes["Valor_Correto"].mean()
 
@@ -69,7 +62,6 @@ c2.metric("👥 Clientes Ativos", int(clientes_ativos))
 c3.metric("❌ Perdas", int(perdas))
 c4.metric("🎟️ Ticket Médio", f"€ {ticket_medio:,.2f}")
 
-# ================= TABELAS =================
 st.divider()
 st.header("📋 Tabelas")
 
@@ -110,7 +102,6 @@ periodos = pd.Series({
 })
 st.dataframe(periodos)
 
-# ================= GRÁFICOS =================
 st.divider()
 st.header("📊 Gráficos")
 
@@ -132,10 +123,10 @@ st.bar_chart(df_mes.groupby("Modalidade")["Valor_Correto"].sum())
 st.subheader("Valor por Período do Mês")
 st.bar_chart(periodos)
 
-# ================= COMPARAÇÃO ENTRE MESES =================
 st.divider()
 st.header("📈 Comparação entre Meses")
 
 comparativo = df.groupby("Mes")["Valor_Correto"].sum().sort_index()
 st.dataframe(comparativo)
 st.line_chart(comparativo)
+
