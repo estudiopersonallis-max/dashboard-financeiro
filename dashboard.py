@@ -39,6 +39,13 @@ df = pd.concat(dfs, ignore_index=True)
 meses = sorted(df["Mes"].unique())
 mes_sel = st.selectbox("📅 Selecione o mês", meses)
 df_mes = df[df["Mes"] == mes_sel]
+st.subheader("🧪 TESTE DE DADOS (DEBUG)")
+st.write("Soma da coluna Valor:")
+st.write(df_mes["Valor"].sum())
+
+st.write("Primeiras 5 linhas:")
+st.dataframe(df_mes[["Nome do cliente", "Valor", "Perdas"]].head())
+
 
 # ================= CLIENTES ATIVOS (CORRETO) =================
 clientes_por_cliente = (
