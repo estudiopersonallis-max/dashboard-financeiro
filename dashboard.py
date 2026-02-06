@@ -129,4 +129,3 @@ st.header("📈 Comparação entre Meses")
 comparativo = df.groupby("Mes")["Valor_Correto"].sum().sort_index()
 st.dataframe(comparativo)
 st.line_chart(comparativo)
-
