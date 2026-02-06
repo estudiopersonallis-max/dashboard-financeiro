@@ -2,156 +2,79 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(page_title="Dashboard Financeiro", layout="wide")
+
 st.title("📊 Dashboard Financeiro")
 
-uploaded_files = st.file_uploader(
-    "📤 Carregue um ficheiro Excel por mês",
-    type=["xlsx"],
-    accept_multiple_files=True
-)
+uploaded_file = st.file_uploader("📤 Carregue o arquivo Excel", type=["xlsx"])
 
-if not uploaded_files:
-    st.info("⬆️ Carregue pelo menos um ficheiro Excel")
-    st.stop()
+if uploaded_file:
+    df = pd.read_excel(uploaded_file)
 
-dfs = []
-
-for file in uploaded_files:
-    df = pd.read_excel(file)
-    df.columns = df.columns.str.strip()
-
-    # ⚠️ Datas em formato PT/BR
-    df["Data"] = pd.to_datetime(
-        df["Data"],
-        dayfirst=True,
-        errors="coerce"
-    )
-
-    df = df.dropna(subset=["Data"])
-
-    df["Valor_Correto"] = pd.to_numeric(
-        df["Valor"],
-        errors="coerce"
-    ).fillna(0)
-
+    df["Data"] = pd.to_datetime(df["Data"])
     df["Dia"] = df["Data"].dt.day
-    df["Mes"] = df["Data"].dt.strftime("%Y-%m")
+
+    # Perdas
     df["É Perda"] = df["Perdas"].notna()
 
-    dfs.append(df)
+    # Clientes ativos
+    clientes_ativos = df[~df["É Perda"]]["Nome do cliente"].nunique()
+    perdas = df["É Perda"].sum()
 
-df = pd.concat(dfs, ignore_index=True)
+    # KPIs
+    total_valor = df["Valor"].sum()
+    ticket_medio = df["Valor"].mean()
 
-meses = sorted(df["Mes"].unique())
-mes_sel = st.selectbox("📅 Selecione o mês", meses)
-df_mes = df[df["Mes"] == mes_sel]
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("💰 Valor Total", f"€ {total_valor:,.2f}")
+    col2.metric("👥 Clientes Ativos", clientes_ativos)
+    col3.metric("❌ Perdas", perdas)
+    col4.metric("🎟️ Ticket Médio", f"€ {ticket_medio:,.2f}")
 
-# ================= CLIENTES =================
-clientes_por_cliente = (
-    df_mes.groupby("Nome do cliente")["É Perda"]
-    .any()
-)
+    st.divider()
 
-clientes_ativos = (~clientes_por_cliente).sum()
-perdas = clientes_por_cliente.sum()
+    col1, col2 = st.columns(2)
 
-# ================= KPIs =================
-total_valor = df_mes["Valor_Correto"].sum()
-ticket_medio = df_mes["Valor_Correto"].mean()
+    with col1:
+        st.subheader("📌 Valor por Modalidade")
+        st.dataframe(df.groupby("Modalidade")["Valor"].sum())
 
-st.subheader("📌 Indicadores")
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("💰 Valor Total", f"€ {total_valor:,.2f}")
-c2.metric("👥 Clientes Ativos", int(clientes_ativos))
-c3.metric("❌ Perdas", int(perdas))
-c4.metric("🎟️ Ticket Médio", f"€ {ticket_medio:,.2f}")
+        st.subheader("📌 Valor por Tipo")
+        st.dataframe(df.groupby("Tipo")["Valor"].sum())
 
-# ================= TABELAS =================
-st.divider()
-st.header("📋 Tabelas")
+    with col2:
+        st.subheader("📌 Valor por Professor")
+        st.dataframe(df.groupby("Professor")["Valor"].sum())
 
-tipos = ["A", "B", "C", "D"]
+        st.subheader("📌 Valor por Local")
+        st.dataframe(df.groupby("Local")["Valor"].sum())
 
-valor_tipo = (
-    df_mes.groupby("Tipo")["Valor_Correto"]
-    .sum()
-    .reindex(tipos, fill_value=0)
-)
+    st.divider()
 
-ticket_tipo = (
-    df_mes.groupby("Tipo")["Valor_Correto"]
-    .mean()
-    .reindex(tipos, fill_value=0)
-)
+    st.subheader("📅 Valor por Período do Mês")
 
-st.subheader("Valor por Tipo")
-st.dataframe(valor_tipo)
+    periodo_1 = df[df["Dia"] <= 10]["Valor"].sum()
+    periodo_2 = df[(df["Dia"] > 10) & (df["Dia"] <= 20)]["Valor"].sum()
+    periodo_3 = df[df["Dia"] > 20]["Valor"].sum()
 
-st.subheader("Ticket Médio por Tipo")
-st.dataframe(ticket_tipo)
+    st.write(f"🟢 Dias 1–10: € {periodo_1:,.2f}")
+    st.write(f"🟡 Dias 11–20: € {periodo_2:,.2f}")
+    st.write(f"🔵 Dias 21–fim: € {periodo_3:,.2f}")
 
-st.subheader("Valor por Professor")
-st.dataframe(
-    df_mes.groupby("Professor")["Valor_Correto"].sum()
-)
+    st.divider()
 
-st.subheader("Valor por Local")
-st.dataframe(
-    df_mes.groupby("Local")["Valor_Correto"].sum()
-)
+    st.subheader("👥 Clientes")
 
-st.subheader("Valor por Modalidade")
-st.dataframe(
-    df_mes.groupby("Modalidade")["Valor_Correto"].sum()
-)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.dataframe(df.groupby("Local")["Nome do cliente"].nunique().rename("Clientes por Local"))
 
-st.subheader("Valor por Período do Mês")
-periodos = pd.Series({
-    "Dias 1–10": df_mes[df_mes["Dia"] <= 10]["Valor_Correto"].sum(),
-    "Dias 11–20": df_mes[
-        (df_mes["Dia"] > 10) & (df_mes["Dia"] <= 20)
-    ]["Valor_Correto"].sum(),
-    "Dias 21–fim": df_mes[df_mes["Dia"] > 20]["Valor_Correto"].sum(),
-})
-st.dataframe(periodos)
+    with col2:
+        st.dataframe(df.groupby("Professor")["Nome do cliente"].nunique().rename("Clientes por Professor"))
 
-# ================= GRÁFICOS =================
-st.divider()
-st.header("📊 Gráficos")
+    st.divider()
 
-st.subheader("Valor por Tipo")
-st.bar_chart(valor_tipo)
+    st.subheader("🎟️ Ticket Médio por Tipo")
+    st.dataframe(df.groupby("Tipo")["Valor"].mean())
 
-st.subheader("Ticket Médio por Tipo")
-st.bar_chart(ticket_tipo)
-
-st.subheader("Valor por Professor")
-st.bar_chart(
-    df_mes.groupby("Professor")["Valor_Correto"].sum()
-)
-
-st.subheader("Valor por Local")
-st.bar_chart(
-    df_mes.groupby("Local")["Valor_Correto"].sum()
-)
-
-st.subheader("Valor por Modalidade")
-st.bar_chart(
-    df_mes.groupby("Modalidade")["Valor_Correto"].sum()
-)
-
-st.subheader("Valor por Período do Mês")
-st.bar_chart(periodos)
-
-# ================= COMPARAÇÃO ENTRE MESES =================
-st.divider()
-st.header("📈 Comparação entre Meses")
-
-comparativo = (
-    df.groupby("Mes")["Valor_Correto"]
-    .sum()
-    .sort_index()
-)
-
-st.dataframe(comparativo)
-st.line_chart(comparativo)
+else:
+    st.info("⬆️ Carregue um arquivo Excel para iniciar o dashboard")
