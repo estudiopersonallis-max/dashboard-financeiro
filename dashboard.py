@@ -123,4 +123,26 @@ st.dataframe(ticket_tipo)
 st.divider()
 st.header("📊 Gráficos")
 
-st.subhe
+st.subheader("Valor por Modalidade")
+st.bar_chart(valor_modalidade)
+
+st.subheader("Valor por Tipo")
+st.bar_chart(valor_tipo)
+
+st.subheader("Valor por Professor")
+st.bar_chart(valor_professor)
+
+st.subheader("Valor por Local")
+st.bar_chart(valor_local)
+
+st.subheader("Valor por Período do Mês")
+st.bar_chart(valor_periodo)
+
+st.subheader("Clientes por Local")
+st.bar_chart(clientes_local)
+
+st.subheader("Clientes por Professor")
+st.bar_chart(clientes_professor)
+
+st.subheader("Ticket Médio por Tipo")
+st.bar_chart(ticket_tipo)
