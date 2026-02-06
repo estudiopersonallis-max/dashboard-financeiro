@@ -15,7 +15,7 @@ else:
         # Normalizar nomes das colunas
         df.columns = df.columns.str.strip()
 
-        # Converter data com segurança
+        # Converter data (mantido como estava)
         df["Data"] = pd.to_datetime(df["Data"], errors="coerce")
         df = df.dropna(subset=["Data"])
         df["Dia"] = df["Data"].dt.day
@@ -37,21 +37,26 @@ else:
 
         st.divider()
 
+        # ================= TABELAS =================
         col1, col2 = st.columns(2)
 
         with col1:
             st.subheader("Valor por Modalidade")
-            st.dataframe(df.groupby("Modalidade")["Valor"].sum())
+            valor_modalidade = df.groupby("Modalidade")["Valor"].sum()
+            st.dataframe(valor_modalidade)
 
             st.subheader("Valor por Tipo")
-            st.dataframe(df.groupby("Tipo")["Valor"].sum())
+            valor_tipo = df.groupby("Tipo")["Valor"].sum()
+            st.dataframe(valor_tipo)
 
         with col2:
             st.subheader("Valor por Professor")
-            st.dataframe(df.groupby("Professor")["Valor"].sum())
+            valor_professor = df.groupby("Professor")["Valor"].sum()
+            st.dataframe(valor_professor)
 
             st.subheader("Valor por Local")
-            st.dataframe(df.groupby("Local")["Valor"].sum())
+            valor_local = df.groupby("Local")["Valor"].sum()
+            st.dataframe(valor_local)
 
         st.divider()
 
@@ -61,26 +66,65 @@ else:
         p2 = df[(df["Dia"] > 10) & (df["Dia"] <= 20)]["Valor"].sum()
         p3 = df[df["Dia"] > 20]["Valor"].sum()
 
-        st.write(f"🟢 Dias 1–10: € {p1:,.2f}")
-        st.write(f"🟡 Dias 11–20: € {p2:,.2f}")
-        st.write(f"🔵 Dias 21–fim: € {p3:,.2f}")
+        valor_periodo = pd.Series(
+            {
+                "Dias 1–10": p1,
+                "Dias 11–20": p2,
+                "Dias 21–fim": p3,
+            }
+        )
+
+        st.dataframe(valor_periodo)
 
         st.divider()
 
         col1, col2 = st.columns(2)
+
         with col1:
             st.subheader("Clientes por Local")
-            st.dataframe(df.groupby("Local")["Nome do cliente"].nunique())
+            clientes_local = df.groupby("Local")["Nome do cliente"].nunique()
+            st.dataframe(clientes_local)
 
         with col2:
             st.subheader("Clientes por Professor")
-            st.dataframe(df.groupby("Professor")["Nome do cliente"].nunique())
+            clientes_professor = df.groupby("Professor")["Nome do cliente"].nunique()
+            st.dataframe(clientes_professor)
 
         st.divider()
 
         st.subheader("Ticket Médio por Tipo")
-        st.dataframe(df.groupby("Tipo")["Valor"].mean())
+        ticket_tipo = df.groupby("Tipo")["Valor"].mean()
+        st.dataframe(ticket_tipo)
+
+        # ================= GRÁFICOS =================
+        st.divider()
+        st.header("📊 Gráficos")
+
+        st.subheader("Valor por Modalidade")
+        st.bar_chart(valor_modalidade)
+
+        st.subheader("Valor por Tipo")
+        st.bar_chart(valor_tipo)
+
+        st.subheader("Valor por Professor")
+        st.bar_chart(valor_professor)
+
+        st.subheader("Valor por Local")
+        st.bar_chart(valor_local)
+
+        st.subheader("Valor por Período do Mês")
+        st.bar_chart(valor_periodo)
+
+        st.subheader("Clientes por Local")
+        st.bar_chart(clientes_local)
+
+        st.subheader("Clientes por Professor")
+        st.bar_chart(clientes_professor)
+
+        st.subheader("Ticket Médio por Tipo")
+        st.bar_chart(ticket_tipo)
 
     except Exception as e:
         st.error("❌ Erro ao processar o arquivo")
         st.exception(e)
+
