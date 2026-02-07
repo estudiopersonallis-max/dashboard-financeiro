@@ -1,22 +1,10 @@
 import streamlit as st
 import pandas as pd
-import datetime
 
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import cm
-from reportlab.lib.enums import TA_CENTER
-
-# ======================================================
-# CONFIG
-# ======================================================
 st.set_page_config(page_title="Dashboard Financeiro", layout="wide")
 st.title("📊 Dashboard Financeiro")
 
-# ======================================================
-# UPLOAD
-# ======================================================
+# ================= UPLOAD =================
 uploaded_files = st.file_uploader(
     "📤 Carregue um ficheiro Excel por mês",
     type=["xlsx"],
@@ -27,20 +15,22 @@ if not uploaded_files:
     st.info("⬆️ Carregue pelo menos um ficheiro Excel para iniciar o dashboard")
     st.stop()
 
-# ======================================================
-# LEITURA DOS FICHEIROS
-# ======================================================
+# ================= LEITURA =================
 dfs = []
 
 for file in uploaded_files:
     df_temp = pd.read_excel(file)
 
-    # Mês definido pelo nome do ficheiro
+    # 🔹 Definir mês a partir do nome do ficheiro
     mes_ficheiro = file.name.replace(".xlsx", "")
+
     df_temp["Mes"] = mes_ficheiro
 
+    # Datas continuam a ser usadas apenas para o dia
     df_temp["Data"] = pd.to_datetime(df_temp["Data"])
     df_temp["Dia"] = df_temp["Data"].dt.day
+    df_temp["Ano"] = df_temp["Data"].dt.year
+    df_temp["Trimestre"] = df_temp["Data"].dt.to_period("Q").astype(str)
 
     # Perdas
     df_temp["É Perda"] = df_temp["Perdas"].notna()
@@ -49,19 +39,27 @@ for file in uploaded_files:
 
 df = pd.concat(dfs, ignore_index=True)
 
-# ======================================================
-# FILTRO POR MÊS (FICHEIRO)
-# ======================================================
-mes_selecionado = st.selectbox(
-    "📅 Selecione o mês",
-    sorted(df["Mes"].unique())
+# ================= FILTRO DE PERÍODO =================
+tipo_periodo = st.selectbox(
+    "📅 Tipo de análise",
+    ["Mês (ficheiro)", "Trimestre", "Ano"]
 )
 
-df_filtro = df[df["Mes"] == mes_selecionado]
+if tipo_periodo == "Mês (ficheiro)":
+    periodo = st.selectbox("Selecione o mês", sorted(df["Mes"].unique()))
+    df_filtro = df[df["Mes"] == periodo]
 
-# ======================================================
-# KPIs
-# ======================================================
+elif tipo_periodo == "Trimestre":
+    periodo = st.selectbox("Selecione o trimestre", sorted(df["Trimestre"].unique()))
+    df_filtro = df[df["Trimestre"] == periodo]
+
+else:
+    periodo = st.selectbox("Selecione o ano", sorted(df["Ano"].unique()))
+    df_filtro = df[df["Ano"] == periodo]
+
+st.caption(f"📌 Período selecionado: **{periodo}**")
+
+# ================= KPIs =================
 clientes_ativos = df_filtro[~df_filtro["É Perda"]]["Nome do cliente"].nunique()
 perdas = df_filtro["É Perda"].sum()
 
@@ -76,9 +74,7 @@ col4.metric("🎟️ Ticket Médio", f"€ {ticket_medio:,.2f}")
 
 st.divider()
 
-# ======================================================
-# TABELAS
-# ======================================================
+# ================= TABELAS =================
 col1, col2 = st.columns(2)
 
 with col1:
@@ -101,28 +97,26 @@ with col2:
 
 st.divider()
 
-# ======================================================
-# PERÍODOS DO MÊS
-# ======================================================
+# ================= PERÍODOS DO MÊS =================
 st.subheader("📅 Valor por Período do Mês")
 
-p1 = df_filtro[df_filtro["Dia"] <= 10]["Valor"].sum()
-p2 = df_filtro[(df_filtro["Dia"] > 10) & (df_filtro["Dia"] <= 20)]["Valor"].sum()
-p3 = df_filtro[df_filtro["Dia"] > 20]["Valor"].sum()
+periodo_1 = df_filtro[df_filtro["Dia"] <= 10]["Valor"].sum()
+periodo_2 = df_filtro[(df_filtro["Dia"] > 10) & (df_filtro["Dia"] <= 20)]["Valor"].sum()
+periodo_3 = df_filtro[df_filtro["Dia"] > 20]["Valor"].sum()
 
-valor_periodo = pd.Series({
-    "Dias 1–10": p1,
-    "Dias 11–20": p2,
-    "Dias 21–fim": p3
-})
+valor_periodo = pd.Series(
+    {
+        "Dias 1–10": periodo_1,
+        "Dias 11–20": periodo_2,
+        "Dias 21–fim": periodo_3,
+    }
+)
 
 st.dataframe(valor_periodo)
 
 st.divider()
 
-# ======================================================
-# CLIENTES
-# ======================================================
+# ================= CLIENTES =================
 st.subheader("👥 Clientes")
 
 col1, col2 = st.columns(2)
@@ -141,21 +135,37 @@ st.subheader("🎟️ Ticket Médio por Tipo")
 ticket_tipo = df_filtro.groupby("Tipo")["Valor"].mean()
 st.dataframe(ticket_tipo)
 
-# ======================================================
-# GRÁFICOS
-# ======================================================
+# ================= GRÁFICOS =================
 st.divider()
 st.header("📊 Gráficos")
 
+st.subheader("Valor por Modalidade")
 st.bar_chart(valor_modalidade)
+
+st.subheader("Valor por Tipo")
 st.bar_chart(valor_tipo)
+
+st.subheader("Valor por Professor")
 st.bar_chart(valor_professor)
+
+st.subheader("Valor por Local")
 st.bar_chart(valor_local)
+
+st.subheader("Valor por Período do Mês")
 st.bar_chart(valor_periodo)
+
+st.subheader("Clientes por Local")
 st.bar_chart(clientes_local)
+
+st.subheader("Clientes por Professor")
 st.bar_chart(clientes_professor)
+
+st.subheader("Ticket Médio por Tipo")
 st.bar_chart(ticket_tipo)
 
-# ======================================================
-# RELATÓRIO PDF
-# =======================================
+# ================= COMPARATIVO ANUAL =================
+st.divider()
+st.header("📈 Comparativo Anual / Global")
+
+valor_por_mes = df.groupby("Mes")["Valor"].sum()
+st.line_chart(valor_por_mes)
