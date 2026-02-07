@@ -21,9 +21,14 @@ dfs = []
 for file in uploaded_files:
     df_temp = pd.read_excel(file)
 
+    # 🔹 Definir mês a partir do nome do ficheiro
+    mes_ficheiro = file.name.replace(".xlsx", "")
+
+    df_temp["Mes"] = mes_ficheiro
+
+    # Datas continuam a ser usadas apenas para o dia
     df_temp["Data"] = pd.to_datetime(df_temp["Data"])
     df_temp["Dia"] = df_temp["Data"].dt.day
-    df_temp["Mes"] = df_temp["Data"].dt.to_period("M").astype(str)
     df_temp["Ano"] = df_temp["Data"].dt.year
     df_temp["Trimestre"] = df_temp["Data"].dt.to_period("Q").astype(str)
 
@@ -37,10 +42,10 @@ df = pd.concat(dfs, ignore_index=True)
 # ================= FILTRO DE PERÍODO =================
 tipo_periodo = st.selectbox(
     "📅 Tipo de análise",
-    ["Mês", "Trimestre", "Ano"]
+    ["Mês (ficheiro)", "Trimestre", "Ano"]
 )
 
-if tipo_periodo == "Mês":
+if tipo_periodo == "Mês (ficheiro)":
     periodo = st.selectbox("Selecione o mês", sorted(df["Mes"].unique()))
     df_filtro = df[df["Mes"] == periodo]
 
@@ -92,6 +97,7 @@ with col2:
 
 st.divider()
 
+# ================= PERÍODOS DO MÊS =================
 st.subheader("📅 Valor por Período do Mês")
 
 periodo_1 = df_filtro[df_filtro["Dia"] <= 10]["Valor"].sum()
@@ -110,6 +116,7 @@ st.dataframe(valor_periodo)
 
 st.divider()
 
+# ================= CLIENTES =================
 st.subheader("👥 Clientes")
 
 col1, col2 = st.columns(2)
@@ -156,10 +163,9 @@ st.bar_chart(clientes_professor)
 st.subheader("Ticket Médio por Tipo")
 st.bar_chart(ticket_tipo)
 
-# ================= COMPARATIVOS =================
+# ================= COMPARATIVO ANUAL =================
 st.divider()
-st.header("📈 Comparativos")
+st.header("📈 Comparativo Anual / Global")
 
-valor_mensal = df.groupby("Mes")["Valor"].sum().sort_index()
-st.subheader("Evolução Mensal do Faturamento")
-st.line_chart(valor_mensal)
+valor_por_mes = df.groupby("Mes")["Valor"].sum()
+st.line_chart(valor_por_mes)
