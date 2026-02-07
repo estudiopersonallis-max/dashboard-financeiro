@@ -25,13 +25,13 @@ for file in uploaded_files:
     mes_ficheiro = file.name.replace(".xlsx", "")
     df_temp["Mes"] = mes_ficheiro
 
-    # Datas (apenas para dia / ano / trimestre)
+    # Datas (apenas para apoio)
     df_temp["Data"] = pd.to_datetime(df_temp["Data"])
     df_temp["Dia"] = df_temp["Data"].dt.day
     df_temp["Ano"] = df_temp["Data"].dt.year
     df_temp["Trimestre"] = df_temp["Data"].dt.to_period("Q").astype(str)
 
-    # Normalizar nome do cliente
+    # Normalizar cliente
     df_temp["Nome do cliente"] = (
         df_temp["Nome do cliente"]
         .astype(str)
@@ -57,4 +57,27 @@ for file in uploaded_files:
 
 df = pd.concat(dfs, ignore_index=True)
 
-# ================= FILTRO DE PERÍODO ========
+# ================= FILTRO =================
+tipo_periodo = st.selectbox(
+    "📅 Tipo de análise",
+    ["Mês (ficheiro)", "Trimestre", "Ano"]
+)
+
+if tipo_periodo == "Mês (ficheiro)":
+    periodo = st.selectbox("Selecione o mês", sorted(df["Mes"].unique()))
+    df_filtro = df[df["Mes"] == periodo]
+
+elif tipo_periodo == "Trimestre":
+    periodo = st.selectbox("Selecione o trimestre", sorted(df["Trimestre"].unique()))
+    df_filtro = df[df["Trimestre"] == periodo]
+
+else:
+    periodo = st.selectbox("Selecione o ano", sorted(df["Ano"].unique()))
+    df_filtro = df[df["Ano"] == periodo]
+
+st.caption(f"📌 Período selecionado: **{periodo}**")
+
+# ================= KPIs =================
+clientes_ativos = df_filtro.loc[df_filtro["Ativo"], "Nome do cliente"].nunique()
+perdas = int(df_filtro["É Perda"].sum())
+total_valor = df_filtro["Valor"].sum(
