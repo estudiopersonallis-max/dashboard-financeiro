@@ -80,4 +80,95 @@ st.caption(f"📌 Período selecionado: **{periodo}**")
 # ================= KPIs =================
 clientes_ativos = df_filtro.loc[df_filtro["Ativo"], "Nome do cliente"].nunique()
 perdas = int(df_filtro["É Perda"].sum())
-total_valor = df_filtro["Valor"].sum(
+total_valor = df_filtro["Valor"].sum()
+
+ticket_medio = total_valor / clientes_ativos if clientes_ativos > 0 else 0
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("💰 Valor Total", f"€ {total_valor:,.2f}")
+col2.metric("👥 Clientes Ativos", clientes_ativos)
+col3.metric("❌ Perdas", perdas)
+col4.metric("🎟️ Ticket Médio", f"€ {ticket_medio:,.2f}")
+
+st.divider()
+
+# ================= TABELAS =================
+valor_modalidade = df_filtro.groupby("Modalidade")["Valor"].sum()
+valor_tipo = df_filtro.groupby("Tipo")["Valor"].sum()
+valor_professor = df_filtro.groupby("Professor")["Valor"].sum()
+valor_local = df_filtro.groupby("Local")["Valor"].sum()
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("📌 Valor por Modalidade")
+    st.dataframe(valor_modalidade)
+
+    st.subheader("📌 Valor por Tipo")
+    st.dataframe(valor_tipo)
+
+with col2:
+    st.subheader("📌 Valor por Professor")
+    st.dataframe(valor_professor)
+
+    st.subheader("📌 Valor por Local")
+    st.dataframe(valor_local)
+
+st.divider()
+
+# ================= RELATÓRIO HTML =================
+st.header("📄 Relatório")
+
+html = f"""
+<html>
+<head>
+<meta charset="utf-8">
+<title>Relatório Financeiro - {periodo}</title>
+<style>
+body {{ font-family: Arial; margin: 40px; }}
+h1 {{ color: #2c3e50; }}
+table {{ border-collapse: collapse; width: 60%; }}
+th, td {{ border: 1px solid #ccc; padding: 8px; text-align: right; }}
+th {{ background-color: #f2f2f2; }}
+</style>
+</head>
+<body>
+
+<h1>Relatório Financeiro – {periodo}</h1>
+
+<ul>
+<li><strong>Valor Total:</strong> € {total_valor:,.2f}</li>
+<li><strong>Clientes Ativos:</strong> {clientes_ativos}</li>
+<li><strong>Perdas:</strong> {perdas}</li>
+<li><strong>Ticket Médio:</strong> € {ticket_medio:,.2f}</li>
+</ul>
+
+<h2>Valor por Modalidade</h2>
+{valor_modalidade.to_frame("Valor").to_html()}
+
+<h2>Valor por Tipo</h2>
+{valor_tipo.to_frame("Valor").to_html()}
+
+<h2>Valor por Professor</h2>
+{valor_professor.to_frame("Valor").to_html()}
+
+<h2>Valor por Local</h2>
+{valor_local.to_frame("Valor").to_html()}
+
+</body>
+</html>
+"""
+
+st.download_button(
+    "⬇️ Baixar Relatório HTML",
+    data=html,
+    file_name=f"relatorio_{periodo}.html",
+    mime="text/html"
+)
+
+# ================= COMPARATIVO GLOBAL =================
+st.divider()
+st.header("📈 Comparativo Global")
+
+valor_por_mes = df.groupby("Mes")["Valor"].sum()
+st.line_chart(valor_por_mes)
