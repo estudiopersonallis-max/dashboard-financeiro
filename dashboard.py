@@ -2,12 +2,6 @@ import streamlit as st
 import pandas as pd
 import datetime
 
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import cm
-from reportlab.lib.enums import TA_CENTER
-
 st.set_page_config(page_title="Dashboard Financeiro", layout="wide")
 st.title("📊 Dashboard Financeiro")
 
@@ -28,17 +22,15 @@ dfs = []
 for file in uploaded_files:
     df_temp = pd.read_excel(file)
 
-    # Mês pelo nome do ficheiro
     mes_ficheiro = file.name.replace(".xlsx", "")
     df_temp["Mes"] = mes_ficheiro
 
-    # Datas (usadas só para dia / trimestre / ano)
     df_temp["Data"] = pd.to_datetime(df_temp["Data"])
     df_temp["Dia"] = df_temp["Data"].dt.day
     df_temp["Ano"] = df_temp["Data"].dt.year
     df_temp["Trimestre"] = df_temp["Data"].dt.to_period("Q").astype(str)
 
-    # 🔹 NORMALIZAÇÃO DOS NOMES (CORREÇÃO DOS CLIENTES ATIVOS)
+    # 🔹 NORMALIZAÇÃO DOS NOMES (CORRIGE CLIENTES ATIVOS)
     df_temp["Nome do cliente"] = (
         df_temp["Nome do cliente"]
         .astype(str)
@@ -46,14 +38,13 @@ for file in uploaded_files:
         .str.upper()
     )
 
-    # Perdas
     df_temp["É Perda"] = df_temp["Perdas"].notna()
 
     dfs.append(df_temp)
 
 df = pd.concat(dfs, ignore_index=True)
 
-# ================= FILTRO DE PERÍODO =================
+# ================= FILTRO =================
 tipo_periodo = st.selectbox(
     "📅 Tipo de análise",
     ["Mês (ficheiro)", "Trimestre", "Ano"]
@@ -92,147 +83,82 @@ st.divider()
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("📌 Valor por Modalidade")
     valor_modalidade = df_filtro.groupby("Modalidade")["Valor"].sum()
+    st.subheader("📌 Valor por Modalidade")
     st.dataframe(valor_modalidade)
 
-    st.subheader("📌 Valor por Tipo")
     valor_tipo = df_filtro.groupby("Tipo")["Valor"].sum()
+    st.subheader("📌 Valor por Tipo")
     st.dataframe(valor_tipo)
 
 with col2:
-    st.subheader("📌 Valor por Professor")
     valor_professor = df_filtro.groupby("Professor")["Valor"].sum()
+    st.subheader("📌 Valor por Professor")
     st.dataframe(valor_professor)
 
-    st.subheader("📌 Valor por Local")
     valor_local = df_filtro.groupby("Local")["Valor"].sum()
+    st.subheader("📌 Valor por Local")
     st.dataframe(valor_local)
 
 st.divider()
 
-# ================= PERÍODOS DO MÊS =================
-st.subheader("📅 Valor por Período do Mês")
-
-p1 = df_filtro[df_filtro["Dia"] <= 10]["Valor"].sum()
-p2 = df_filtro[(df_filtro["Dia"] > 10) & (df_filtro["Dia"] <= 20)]["Valor"].sum()
-p3 = df_filtro[df_filtro["Dia"] > 20]["Valor"].sum()
-
-valor_periodo = pd.Series({
-    "Dias 1–10": p1,
-    "Dias 11–20": p2,
-    "Dias 21–fim": p3
-})
-
-st.dataframe(valor_periodo)
-
-st.divider()
-
 # ================= CLIENTES =================
-st.subheader("👥 Clientes")
+clientes_local = df_filtro.groupby("Local")["Nome do cliente"].nunique()
+clientes_professor = df_filtro.groupby("Professor")["Nome do cliente"].nunique()
 
-col1, col2 = st.columns(2)
+# ================= RELATÓRIO HTML =================
+def gerar_relatorio_html():
+    html = f"""
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body {{ font-family: Arial; }}
+            h1 {{ text-align: center; }}
+            table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; }}
+            th, td {{ border: 1px solid #ccc; padding: 8px; }}
+            th {{ background-color: #f2f2f2; }}
+        </style>
+    </head>
+    <body>
 
-with col1:
-    clientes_local = df_filtro.groupby("Local")["Nome do cliente"].nunique()
-    st.dataframe(clientes_local.rename("Clientes por Local"))
+    <h1>Relatório Financeiro</h1>
+    <p><b>Período:</b> {periodo}</p>
+    <p><b>Gerado em:</b> {datetime.date.today().strftime('%d/%m/%Y')}</p>
 
-with col2:
-    clientes_professor = df_filtro.groupby("Professor")["Nome do cliente"].nunique()
-    st.dataframe(clientes_professor.rename("Clientes por Professor"))
+    <h2>Resumo Executivo</h2>
+    <ul>
+        <li><b>Valor Total:</b> € {total_valor:,.2f}</li>
+        <li><b>Clientes Ativos:</b> {clientes_ativos}</li>
+        <li><b>Perdas:</b> {perdas}</li>
+        <li><b>Ticket Médio:</b> € {ticket_medio:,.2f}</li>
+    </ul>
 
-st.divider()
+    <h2>Valor por Modalidade</h2>
+    {valor_modalidade.to_frame("Valor").to_html()}
 
-st.subheader("🎟️ Ticket Médio por Tipo")
-ticket_tipo = df_filtro.groupby("Tipo")["Valor"].mean()
-st.dataframe(ticket_tipo)
+    <h2>Valor por Tipo</h2>
+    {valor_tipo.to_frame("Valor").to_html()}
 
-# ================= GRÁFICOS =================
-st.divider()
-st.header("📊 Gráficos")
+    <h2>Valor por Professor</h2>
+    {valor_professor.to_frame("Valor").to_html()}
 
-st.bar_chart(valor_modalidade)
-st.bar_chart(valor_tipo)
-st.bar_chart(valor_professor)
-st.bar_chart(valor_local)
-st.bar_chart(valor_periodo)
-st.bar_chart(clientes_local)
-st.bar_chart(clientes_professor)
-st.bar_chart(ticket_tipo)
+    <h2>Valor por Local</h2>
+    {valor_local.to_frame("Valor").to_html()}
 
-# ================= COMPARATIVO ANUAL =================
-st.divider()
-st.header("📈 Comparativo Anual / Global")
-
-valor_por_mes = df.groupby("Mes")["Valor"].sum()
-st.line_chart(valor_por_mes)
-
-# ================= RELATÓRIO PDF =================
-def gerar_relatorio_pdf():
-    nome = f"Relatorio_{periodo}.pdf"
-
-    doc = SimpleDocTemplate(
-        nome,
-        pagesize=A4,
-        rightMargin=2*cm,
-        leftMargin=2*cm,
-        topMargin=2*cm,
-        bottomMargin=2*cm
-    )
-
-    styles = getSampleStyleSheet()
-    story = []
-
-    titulo = ParagraphStyle(
-        "Titulo",
-        parent=styles["Heading1"],
-        alignment=TA_CENTER
-    )
-
-    story.append(Paragraph("Relatório Financeiro", titulo))
-    story.append(Spacer(1, 12))
-
-    story.append(Paragraph(f"<b>Período:</b> {periodo}", styles["Normal"]))
-    story.append(Paragraph(
-        f"<b>Gerado em:</b> {datetime.date.today().strftime('%d/%m/%Y')}",
-        styles["Normal"]
-    ))
-
-    story.append(Spacer(1, 20))
-
-    story.append(Paragraph("<b>Resumo Executivo</b>", styles["Heading2"]))
-    story.append(Paragraph(f"Valor Total: € {total_valor:,.2f}", styles["Normal"]))
-    story.append(Paragraph(f"Clientes Ativos: {clientes_ativos}", styles["Normal"]))
-    story.append(Paragraph(f"Perdas: {perdas}", styles["Normal"]))
-    story.append(Paragraph(f"Ticket Médio: € {ticket_medio:,.2f}", styles["Normal"]))
-
-    story.append(Spacer(1, 20))
-
-    def tabela(titulo, serie):
-        story.append(Paragraph(titulo, styles["Heading3"]))
-        data = [["Categoria", "Valor"]]
-        for k, v in serie.items():
-            data.append([str(k), f"€ {v:,.2f}"])
-        story.append(Table(data))
-        story.append(Spacer(1, 15))
-
-    tabela("Valor por Modalidade", valor_modalidade)
-    tabela("Valor por Tipo", valor_tipo)
-    tabela("Valor por Professor", valor_professor)
-    tabela("Valor por Local", valor_local)
-
-    doc.build(story)
-    return nome
+    </body>
+    </html>
+    """
+    return html
 
 st.divider()
-st.header("📄 Relatório Mensal")
+st.header("📄 Relatório")
 
-if st.button("Gerar relatório PDF"):
-    pdf = gerar_relatorio_pdf()
-    with open(pdf, "rb") as f:
-        st.download_button(
-            "⬇️ Download do relatório",
-            f,
-            file_name=pdf,
-            mime="application/pdf"
-        )
+html_relatorio = gerar_relatorio_html()
+
+st.download_button(
+    "⬇️ Download do relatório (HTML → PDF)",
+    data=html_relatorio,
+    file_name=f"Relatorio_{periodo}.html",
+    mime="text/html"
+)
