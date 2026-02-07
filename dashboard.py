@@ -11,43 +11,21 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-if uploaded_files is None or len(uploaded_files) == 0:
-    st.info("⬆️ Carregue pelo menos um ficheiro Excel")
+if not uploaded_files:
+    st.info("⬆️ Carregue pelo menos um ficheiro Excel para iniciar o dashboard")
     st.stop()
 
-# Feedback visual imediato
-st.success(f"✅ {len(uploaded_files)} ficheiro(s) carregado(s):")
-for f in uploaded_files:
-    st.write("•", f.name)
-
-
-# ================= LEITURA DOS FICHEIROS =================
+# ================= LEITURA =================
 dfs = []
 
 for file in uploaded_files:
     df_temp = pd.read_excel(file)
 
-    # Normalizar colunas
-    df_temp.columns = df_temp.columns.str.strip()
-
-    # Converter datas (mantido como no código original que funcionava)
-    df_temp["Data"] = pd.to_datetime(df_temp["Data"], errors="coerce")
-    df_temp = df_temp.dropna(subset=["Data"])
+    df_temp["Data"] = pd.to_datetime(df_temp["Data"])
     df_temp["Dia"] = df_temp["Data"].dt.day
-
-    # Criar coluna Mês
-    df_temp["Mes"] = df_temp["Data"].dt.strftime("%Y-%m")
-
-    # Normalizar coluna Valor (formato europeu)
-    df_temp["Valor"] = (
-        df_temp["Valor"]
-        .astype(str)
-        .str.replace("€", "", regex=False)
-        .str.replace(" ", "", regex=False)
-        .str.replace(".", "", regex=False)
-        .str.replace(",", ".", regex=False)
-    )
-    df_temp["Valor"] = pd.to_numeric(df_temp["Valor"], errors="coerce")
+    df_temp["Mes"] = df_temp["Data"].dt.to_period("M").astype(str)
+    df_temp["Ano"] = df_temp["Data"].dt.year
+    df_temp["Trimestre"] = df_temp["Data"].dt.to_period("Q").astype(str)
 
     # Perdas
     df_temp["É Perda"] = df_temp["Perdas"].notna()
@@ -56,19 +34,32 @@ for file in uploaded_files:
 
 df = pd.concat(dfs, ignore_index=True)
 
-# ================= SELETOR DE MÊS =================
-mes_selecionado = st.selectbox(
-    "📅 Selecione o mês",
-    sorted(df["Mes"].unique())
+# ================= FILTRO DE PERÍODO =================
+tipo_periodo = st.selectbox(
+    "📅 Tipo de análise",
+    ["Mês", "Trimestre", "Ano"]
 )
 
-df = df[df["Mes"] == mes_selecionado]
+if tipo_periodo == "Mês":
+    periodo = st.selectbox("Selecione o mês", sorted(df["Mes"].unique()))
+    df_filtro = df[df["Mes"] == periodo]
+
+elif tipo_periodo == "Trimestre":
+    periodo = st.selectbox("Selecione o trimestre", sorted(df["Trimestre"].unique()))
+    df_filtro = df[df["Trimestre"] == periodo]
+
+else:
+    periodo = st.selectbox("Selecione o ano", sorted(df["Ano"].unique()))
+    df_filtro = df[df["Ano"] == periodo]
+
+st.caption(f"📌 Período selecionado: **{periodo}**")
 
 # ================= KPIs =================
-total_valor = df["Valor"].sum()
-ticket_medio = df["Valor"].mean()
-perdas = df["É Perda"].sum()
-clientes_ativos = df[~df["É Perda"]]["Nome do cliente"].nunique()
+clientes_ativos = df_filtro[~df_filtro["É Perda"]]["Nome do cliente"].nunique()
+perdas = df_filtro["É Perda"].sum()
+
+total_valor = df_filtro["Valor"].sum()
+ticket_medio = df_filtro["Valor"].mean()
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("💰 Valor Total", f"€ {total_valor:,.2f}")
@@ -82,36 +73,36 @@ st.divider()
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("Valor por Modalidade")
-    valor_modalidade = df.groupby("Modalidade")["Valor"].sum()
+    st.subheader("📌 Valor por Modalidade")
+    valor_modalidade = df_filtro.groupby("Modalidade")["Valor"].sum()
     st.dataframe(valor_modalidade)
 
-    st.subheader("Valor por Tipo")
-    valor_tipo = df.groupby("Tipo")["Valor"].sum()
+    st.subheader("📌 Valor por Tipo")
+    valor_tipo = df_filtro.groupby("Tipo")["Valor"].sum()
     st.dataframe(valor_tipo)
 
 with col2:
-    st.subheader("Valor por Professor")
-    valor_professor = df.groupby("Professor")["Valor"].sum()
+    st.subheader("📌 Valor por Professor")
+    valor_professor = df_filtro.groupby("Professor")["Valor"].sum()
     st.dataframe(valor_professor)
 
-    st.subheader("Valor por Local")
-    valor_local = df.groupby("Local")["Valor"].sum()
+    st.subheader("📌 Valor por Local")
+    valor_local = df_filtro.groupby("Local")["Valor"].sum()
     st.dataframe(valor_local)
 
 st.divider()
 
-st.subheader("Valor por Período do Mês")
+st.subheader("📅 Valor por Período do Mês")
 
-p1 = df[df["Dia"] <= 10]["Valor"].sum()
-p2 = df[(df["Dia"] > 10) & (df["Dia"] <= 20)]["Valor"].sum()
-p3 = df[df["Dia"] > 20]["Valor"].sum()
+periodo_1 = df_filtro[df_filtro["Dia"] <= 10]["Valor"].sum()
+periodo_2 = df_filtro[(df_filtro["Dia"] > 10) & (df_filtro["Dia"] <= 20)]["Valor"].sum()
+periodo_3 = df_filtro[df_filtro["Dia"] > 20]["Valor"].sum()
 
 valor_periodo = pd.Series(
     {
-        "Dias 1–10": p1,
-        "Dias 11–20": p2,
-        "Dias 21–fim": p3,
+        "Dias 1–10": periodo_1,
+        "Dias 11–20": periodo_2,
+        "Dias 21–fim": periodo_3,
     }
 )
 
@@ -119,22 +110,22 @@ st.dataframe(valor_periodo)
 
 st.divider()
 
+st.subheader("👥 Clientes")
+
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("Clientes por Local")
-    clientes_local = df.groupby("Local")["Nome do cliente"].nunique()
-    st.dataframe(clientes_local)
+    clientes_local = df_filtro.groupby("Local")["Nome do cliente"].nunique()
+    st.dataframe(clientes_local.rename("Clientes por Local"))
 
 with col2:
-    st.subheader("Clientes por Professor")
-    clientes_professor = df.groupby("Professor")["Nome do cliente"].nunique()
-    st.dataframe(clientes_professor)
+    clientes_professor = df_filtro.groupby("Professor")["Nome do cliente"].nunique()
+    st.dataframe(clientes_professor.rename("Clientes por Professor"))
 
 st.divider()
 
-st.subheader("Ticket Médio por Tipo")
-ticket_tipo = df.groupby("Tipo")["Valor"].mean()
+st.subheader("🎟️ Ticket Médio por Tipo")
+ticket_tipo = df_filtro.groupby("Tipo")["Valor"].mean()
 st.dataframe(ticket_tipo)
 
 # ================= GRÁFICOS =================
@@ -164,3 +155,11 @@ st.bar_chart(clientes_professor)
 
 st.subheader("Ticket Médio por Tipo")
 st.bar_chart(ticket_tipo)
+
+# ================= COMPARATIVOS =================
+st.divider()
+st.header("📈 Comparativos")
+
+valor_mensal = df.groupby("Mes")["Valor"].sum().sort_index()
+st.subheader("Evolução Mensal do Faturamento")
+st.line_chart(valor_mensal)
