@@ -1,19 +1,18 @@
-import streamlit as st
-import pandas as pd
-
-st.set_page_config(page_title="Dashboard Financeiro", layout="wide")
-st.title("📊 Dashboard Financeiro")
-
-# ================= UPLOAD =================
 uploaded_files = st.file_uploader(
     "📤 Carregue um ficheiro Excel por mês",
     type=["xlsx"],
     accept_multiple_files=True
 )
 
-if not uploaded_files:
+if uploaded_files is None or len(uploaded_files) == 0:
     st.info("⬆️ Carregue pelo menos um ficheiro Excel")
     st.stop()
+
+# Feedback visual imediato
+st.success(f"✅ {len(uploaded_files)} ficheiro(s) carregado(s):")
+for f in uploaded_files:
+    st.write("•", f.name)
+
 
 # ================= LEITURA DOS FICHEIROS =================
 dfs = []
