@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import datetime
 
 st.set_page_config(page_title="Dashboard Financeiro", layout="wide")
 st.title("📊 Dashboard Financeiro")
@@ -22,15 +21,17 @@ dfs = []
 for file in uploaded_files:
     df_temp = pd.read_excel(file)
 
+    # 🔹 Mês pelo nome do ficheiro
     mes_ficheiro = file.name.replace(".xlsx", "")
     df_temp["Mes"] = mes_ficheiro
 
+    # Datas (usadas só para dia / ano / trimestre)
     df_temp["Data"] = pd.to_datetime(df_temp["Data"])
     df_temp["Dia"] = df_temp["Data"].dt.day
     df_temp["Ano"] = df_temp["Data"].dt.year
     df_temp["Trimestre"] = df_temp["Data"].dt.to_period("Q").astype(str)
 
-    # Normalizar nomes dos clientes
+    # Normalizar nome dos clientes
     df_temp["Nome do cliente"] = (
         df_temp["Nome do cliente"]
         .astype(str)
@@ -38,14 +39,16 @@ for file in uploaded_files:
         .str.upper()
     )
 
-    # 🔹 REGRA CORRETA DE CLIENTE ATIVO (COLUNA C)
+    # ================= ATIVOS (COLUNA C) =================
+    coluna_ativo = df_temp.columns[2]  # coluna C por posição
+
     df_temp["Ativo"] = (
-        df_temp["C"]
+        df_temp[coluna_ativo]
         .astype(str)
         .str.strip()
         .str.lower()
         .ne("")
-        & ~df_temp["C"].astype(str).str.lower().str.contains("inativo")
+        & ~df_temp[coluna_ativo].astype(str).str.lower().str.contains("inativo")
     )
 
     # Perdas continuam separadas
@@ -55,7 +58,7 @@ for file in uploaded_files:
 
 df = pd.concat(dfs, ignore_index=True)
 
-# ================= FILTRO =================
+# ================= FILTRO DE PERÍODO =================
 tipo_periodo = st.selectbox(
     "📅 Tipo de análise",
     ["Mês (ficheiro)", "Trimestre", "Ano"]
@@ -90,35 +93,81 @@ col4.metric("🎟️ Ticket Médio", f"€ {ticket_medio:,.2f}")
 
 st.divider()
 
-# ================= RELATÓRIO HTML =================
-def gerar_relatorio_html():
-    html = f"""
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <style>
-            body {{ font-family: Arial; }}
-            h1 {{ text-align: center; }}
-        </style>
-    </head>
-    <body>
-        <h1>Relatório Financeiro</h1>
-        <p><b>Período:</b> {periodo}</p>
-        <p><b>Valor Total:</b> € {total_valor:,.2f}</p>
-        <p><b>Clientes Ativos:</b> {clientes_ativos}</p>
-        <p><b>Perdas:</b> {perdas}</p>
-        <p><b>Ticket Médio:</b> € {ticket_medio:,.2f}</p>
-    </body>
-    </html>
-    """
-    return html
+# ================= TABELAS =================
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("📌 Valor por Modalidade")
+    valor_modalidade = df_filtro.groupby("Modalidade")["Valor"].sum()
+    st.dataframe(valor_modalidade)
+
+    st.subheader("📌 Valor por Tipo")
+    valor_tipo = df_filtro.groupby("Tipo")["Valor"].sum()
+    st.dataframe(valor_tipo)
+
+with col2:
+    st.subheader("📌 Valor por Professor")
+    valor_professor = df_filtro.groupby("Professor")["Valor"].sum()
+    st.dataframe(valor_professor)
+
+    st.subheader("📌 Valor por Local")
+    valor_local = df_filtro.groupby("Local")["Valor"].sum()
+    st.dataframe(valor_local)
 
 st.divider()
-st.header("📄 Relatório")
 
-st.download_button(
-    "⬇️ Download do relatório (HTML → PDF)",
-    data=gerar_relatorio_html(),
-    file_name=f"Relatorio_{periodo}.html",
-    mime="text/html"
-)
+# ================= PERÍODOS DO MÊS =================
+st.subheader("📅 Valor por Período do Mês")
+
+periodo_1 = df_filtro[df_filtro["Dia"] <= 10]["Valor"].sum()
+periodo_2 = df_filtro[(df_filtro["Dia"] > 10) & (df_filtro["Dia"] <= 20)]["Valor"].sum()
+periodo_3 = df_filtro[df_filtro["Dia"] > 20]["Valor"].sum()
+
+valor_periodo = pd.Series({
+    "Dias 1–10": periodo_1,
+    "Dias 11–20": periodo_2,
+    "Dias 21–fim": periodo_3
+})
+
+st.dataframe(valor_periodo)
+
+st.divider()
+
+# ================= CLIENTES =================
+st.subheader("👥 Clientes")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    clientes_local = df_filtro.groupby("Local")["Nome do cliente"].nunique()
+    st.dataframe(clientes_local.rename("Clientes por Local"))
+
+with col2:
+    clientes_professor = df_filtro.groupby("Professor")["Nome do cliente"].nunique()
+    st.dataframe(clientes_professor.rename("Clientes por Professor"))
+
+st.divider()
+
+st.subheader("🎟️ Ticket Médio por Tipo")
+ticket_tipo = df_filtro.groupby("Tipo")["Valor"].mean()
+st.dataframe(ticket_tipo)
+
+# ================= GRÁFICOS =================
+st.divider()
+st.header("📊 Gráficos")
+
+st.bar_chart(valor_modalidade)
+st.bar_chart(valor_tipo)
+st.bar_chart(valor_professor)
+st.bar_chart(valor_local)
+st.bar_chart(valor_periodo)
+st.bar_chart(clientes_local)
+st.bar_chart(clientes_professor)
+st.bar_chart(ticket_tipo)
+
+# ================= COMPARATIVO GLOBAL =================
+st.divider()
+st.header("📈 Comparativo Global")
+
+valor_por_mes = df.groupby("Mes")["Valor"].sum()
+st.line_chart(valor_por_mes)
