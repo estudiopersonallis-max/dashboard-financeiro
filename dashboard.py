@@ -12,8 +12,6 @@ if uploaded_files is None or len(uploaded_files) == 0:
 st.success(f"✅ {len(uploaded_files)} ficheiro(s) carregado(s):")
 for f in uploaded_files:
     st.write("•", f.name)
-
-
 # ================= LEITURA DOS FICHEIROS =================
 dfs = []
 
