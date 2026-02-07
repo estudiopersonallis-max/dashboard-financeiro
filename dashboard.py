@@ -21,11 +21,11 @@ dfs = []
 for file in uploaded_files:
     df_temp = pd.read_excel(file)
 
-    # Mês a partir do nome do ficheiro
+    # Mês pelo nome do ficheiro
     mes_ficheiro = file.name.replace(".xlsx", "")
     df_temp["Mes"] = mes_ficheiro
 
-    # Datas (usadas só para dia / ano / trimestre)
+    # Datas (apenas para dia / ano / trimestre)
     df_temp["Data"] = pd.to_datetime(df_temp["Data"])
     df_temp["Dia"] = df_temp["Data"].dt.day
     df_temp["Ano"] = df_temp["Data"].dt.year
@@ -40,7 +40,7 @@ for file in uploaded_files:
     )
 
     # ================= ATIVOS (COLUNA C) =================
-    coluna_status = df_temp.columns[2]  # coluna C por posição
+    coluna_status = df_temp.columns[2]  # coluna C
 
     df_temp["Ativo"] = (
         df_temp[coluna_status]
@@ -78,22 +78,21 @@ else:
 st.caption(f"📌 Período selecionado: **{periodo}**")
 
 # ================= KPIs =================
-clientes_ativos = (
-    df_filtro.loc[df_filtro["Ativo"], "Nome do cliente"].nunique()
+clientes_ativos = df_filtro.loc[df_filtro["Ativo"], "Nome do cliente"].nunique()
+perdas = int(df_filtro["É Perda"].sum())
+total_valor = df_filtro["Valor"].sum()
+
+ticket_medio = (
+    total_valor / clientes_ativos
+    if clientes_ativos > 0
+    else 0
 )
 
-total_celulas_ativo = int(df_filtro["Ativo"].sum())
-perdas = int(df_filtro["É Perda"].sum())
-
-total_valor = df_filtro["Valor"].sum()
-ticket_medio = df_filtro["Valor"].mean()
-
-col1, col2, col3, col4, col5 = st.columns(5)
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("💰 Valor Total", f"€ {total_valor:,.2f}")
 col2.metric("👥 Clientes Ativos", clientes_ativos)
-col3.metric("✅ Células com 'ATIVO'", total_celulas_ativo)
-col4.metric("❌ Perdas", perdas)
-col5.metric("🎟️ Ticket Médio", f"€ {ticket_medio:,.2f}")
+col3.metric("❌ Perdas", perdas)
+col4.metric("🎟️ Ticket Médio", f"€ {ticket_medio:,.2f}")
 
 st.divider()
 
@@ -153,7 +152,10 @@ with col2:
 st.divider()
 
 st.subheader("🎟️ Ticket Médio por Tipo")
-ticket_tipo = df_filtro.groupby("Tipo")["Valor"].mean()
+ticket_tipo = (
+    df_filtro.groupby("Tipo")["Valor"].sum()
+    / df_filtro[df_filtro["Ativo"]].groupby("Tipo")["Nome do cliente"].nunique()
+)
 st.dataframe(ticket_tipo)
 
 # ================= GRÁFICOS =================
