@@ -25,7 +25,7 @@ for file in uploaded_files:
     mes_ficheiro = file.name.replace(".xlsx", "")
     df_temp["Mes"] = mes_ficheiro
 
-    # Datas (apenas para apoio)
+    # Datas auxiliares
     df_temp["Data"] = pd.to_datetime(df_temp["Data"])
     df_temp["Dia"] = df_temp["Data"].dt.day
     df_temp["Ano"] = df_temp["Data"].dt.year
@@ -40,7 +40,7 @@ for file in uploaded_files:
     )
 
     # ================= ATIVOS (COLUNA C) =================
-    coluna_status = df_temp.columns[2]  # coluna C
+    coluna_status = df_temp.columns[2]
 
     df_temp["Ativo"] = (
         df_temp[coluna_status]
@@ -81,7 +81,6 @@ st.caption(f"📌 Período selecionado: **{periodo}**")
 clientes_ativos = df_filtro.loc[df_filtro["Ativo"], "Nome do cliente"].nunique()
 perdas = int(df_filtro["É Perda"].sum())
 total_valor = df_filtro["Valor"].sum()
-
 ticket_medio = total_valor / clientes_ativos if clientes_ativos > 0 else 0
 
 col1, col2, col3, col4 = st.columns(4)
@@ -92,27 +91,69 @@ col4.metric("🎟️ Ticket Médio", f"€ {ticket_medio:,.2f}")
 
 st.divider()
 
-# ================= TABELAS =================
+# ================= MODALIDADE =================
+st.subheader("📌 Valor por Modalidade")
 valor_modalidade = df_filtro.groupby("Modalidade")["Valor"].sum()
+st.dataframe(valor_modalidade)
+st.bar_chart(valor_modalidade)
+
+# ================= TIPO =================
+st.subheader("📌 Valor por Tipo")
 valor_tipo = df_filtro.groupby("Tipo")["Valor"].sum()
+st.dataframe(valor_tipo)
+st.bar_chart(valor_tipo)
+
+# ================= PROFESSOR =================
+st.subheader("📌 Valor por Professor")
 valor_professor = df_filtro.groupby("Professor")["Valor"].sum()
+st.dataframe(valor_professor)
+st.bar_chart(valor_professor)
+
+# ================= LOCAL =================
+st.subheader("📌 Valor por Local")
 valor_local = df_filtro.groupby("Local")["Valor"].sum()
+st.dataframe(valor_local)
+st.bar_chart(valor_local)
 
-col1, col2 = st.columns(2)
+st.divider()
 
-with col1:
-    st.subheader("📌 Valor por Modalidade")
-    st.dataframe(valor_modalidade)
+# ================= PERÍODOS DO MÊS =================
+st.subheader("📅 Valor por Período do Mês")
 
-    st.subheader("📌 Valor por Tipo")
-    st.dataframe(valor_tipo)
+valor_periodo = pd.Series({
+    "Dias 1–10": df_filtro[df_filtro["Dia"] <= 10]["Valor"].sum(),
+    "Dias 11–20": df_filtro[(df_filtro["Dia"] > 10) & (df_filtro["Dia"] <= 20)]["Valor"].sum(),
+    "Dias 21–fim": df_filtro[df_filtro["Dia"] > 20]["Valor"].sum()
+})
 
-with col2:
-    st.subheader("📌 Valor por Professor")
-    st.dataframe(valor_professor)
+st.dataframe(valor_periodo)
+st.bar_chart(valor_periodo)
 
-    st.subheader("📌 Valor por Local")
-    st.dataframe(valor_local)
+st.divider()
+
+# ================= CLIENTES =================
+st.subheader("👥 Clientes")
+
+clientes_local = df_filtro.groupby("Local")["Nome do cliente"].nunique()
+st.dataframe(clientes_local.rename("Clientes por Local"))
+st.bar_chart(clientes_local)
+
+clientes_professor = df_filtro.groupby("Professor")["Nome do cliente"].nunique()
+st.dataframe(clientes_professor.rename("Clientes por Professor"))
+st.bar_chart(clientes_professor)
+
+st.divider()
+
+# ================= TICKET POR TIPO =================
+st.subheader("🎟️ Ticket Médio por Tipo")
+
+ticket_tipo = (
+    df_filtro.groupby("Tipo")["Valor"].sum()
+    / df_filtro[df_filtro["Ativo"]].groupby("Tipo")["Nome do cliente"].nunique()
+)
+
+st.dataframe(ticket_tipo)
+st.bar_chart(ticket_tipo)
 
 st.divider()
 
@@ -127,7 +168,7 @@ html = f"""
 <style>
 body {{ font-family: Arial; margin: 40px; }}
 h1 {{ color: #2c3e50; }}
-table {{ border-collapse: collapse; width: 60%; }}
+table {{ border-collapse: collapse; width: 70%; }}
 th, td {{ border: 1px solid #ccc; padding: 8px; text-align: right; }}
 th {{ background-color: #f2f2f2; }}
 </style>
