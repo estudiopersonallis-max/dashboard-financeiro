@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import tempfile
 from io import BytesIO
 from pptx import Presentation
 from pptx.util import Inches
+import tempfile
 import matplotlib
 
 matplotlib.use("Agg")
@@ -15,101 +15,72 @@ st.title("📊 Dashboard Financeiro – Comparativo por Período")
 # ================= UPLOAD =================
 st.subheader("📤 Upload de Ficheiros (cada ficheiro = um período)")
 uploaded_receitas = st.file_uploader(
-    "Carregue ficheiros de RECEITAS (Excel)",
+    "Receitas (Excel)",
     type=["xlsx"],
-    accept_multiple_files=True,
-    key="receitas"
+    accept_multiple_files=True
 )
 uploaded_despesas = st.file_uploader(
-    "Carregue ficheiros de DESPESAS (Excel)",
+    "Despesas (Excel)",
     type=["xlsx"],
-    accept_multiple_files=True,
-    key="despesas"
+    accept_multiple_files=True
 )
 
 # ================= FUNÇÕES =================
-def extrair_periodo(nome):
+def periodo(nome):
     return nome.replace(".xlsx", "").upper()
 
-def ler_receitas(ficheiros):
+def ler_receitas(files):
     dfs = []
-    for f in ficheiros:
+    for f in files:
         df = pd.read_excel(f)
         if df.empty:
             continue
 
-        df["Periodo"] = extrair_periodo(f.name)
-        df["Nome do cliente"] = df["Nome do cliente"].astype(str).str.upper().str.strip()
+        df["Periodo"] = periodo(f.name)
         df["Valor"] = pd.to_numeric(df["Valor"], errors="coerce").fillna(0)
+        df["Nome do cliente"] = df["Nome do cliente"].astype(str).str.upper().str.strip()
         df["Modalidade"] = df.get("Modalidade", "N/A")
-        df["Local"] = df.get("Local", "N/A")
         df["Tipo"] = df.get("Tipo", "N/A")
         df["Professor"] = df.get("Professor", "N/A")
+        df["Local"] = df.get("Local", "N/A")
 
         coluna_status = df.columns[2]
         df["Ativo"] = df[coluna_status].astype(str).str.upper().eq("ATIVO")
         df["É Perda"] = df["Perdas"].notna() if "Perdas" in df.columns else False
 
         dfs.append(df)
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame(columns=["Periodo"])
-
-def ler_despesas(ficheiros):
+def ler_despesas(files):
     dfs = []
-    for f in ficheiros:
+    for f in files:
         df = pd.read_excel(f)
         df = df.dropna(subset=["Valor", "Descrição da Despesa", "Classe"])
         if df.empty:
             continue
 
-        df["Periodo"] = extrair_periodo(f.name)
+        df["Periodo"] = periodo(f.name)
         df["Valor"] = pd.to_numeric(df["Valor"], errors="coerce").fillna(0)
         df["Classe"] = df["Classe"].astype(str).str.upper().str.strip()
         df["Local"] = df["Local"].astype(str).str.strip()
 
         dfs.append(df)
-
-    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame(columns=["Periodo"])
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
 # ================= LEITURA =================
-receitas = ler_receitas(uploaded_receitas) if uploaded_receitas else pd.DataFrame(columns=["Periodo"])
-despesas = ler_despesas(uploaded_despesas) if uploaded_despesas else pd.DataFrame(columns=["Periodo"])
+receitas = ler_receitas(uploaded_receitas) if uploaded_receitas else pd.DataFrame()
+despesas = ler_despesas(uploaded_despesas) if uploaded_despesas else pd.DataFrame()
 
 # ================= FILTRO DEPÓSITOS =================
-if not despesas.empty and "Classe" in despesas.columns:
+if not despesas.empty:
     despesas = despesas[despesas["Classe"] != "DEPÓSITOS"]
 
-# ================= REDISTRIBUIÇÃO GERAL (POR PERÍODO) =================
-if not despesas.empty and not receitas.empty:
-    novas = []
-
-    for periodo in despesas["Periodo"].unique():
-        desp_p = despesas[despesas["Periodo"] == periodo]
-        rec_p = receitas[(receitas["Periodo"] == periodo) & (receitas["Ativo"])]
-
-        ativos_local = rec_p.groupby("Local")["Nome do cliente"].nunique()
-        total_ativos = ativos_local.sum()
-
-        for _, row in desp_p.iterrows():
-            if row["Local"].upper() == "GERAL" and total_ativos > 0:
-                for loc, qtd in ativos_local.items():
-                    nova = row.copy()
-                    nova["Valor"] = row["Valor"] * qtd / total_ativos
-                    nova["Local"] = loc
-                    novas.append(nova)
-            else:
-                novas.append(row)
-
-    despesas = pd.DataFrame(novas)
-
 # ================= KPIs =================
-st.subheader("📌 KPIs por Período")
+st.subheader("📌 KPIs Comparativos")
 
-periodos = sorted(
-    set(receitas["Periodo"].unique()).union(set(despesas["Periodo"].unique()))
-)
-
+periodos = sorted(set(receitas.get("Periodo", [])).union(set(despesas.get("Periodo", []))))
 kpis = []
+
 for p in periodos:
     r = receitas[receitas["Periodo"] == p]
     d = despesas[despesas["Periodo"] == p]
@@ -127,10 +98,9 @@ for p in periodos:
 
 df_kpis = pd.DataFrame(kpis)
 st.dataframe(df_kpis, use_container_width=True)
-
 st.divider()
 
-# ================= FUNÇÃO GRÁFICO =================
+# ================= GRÁFICOS =================
 def grafico_bar(df, titulo):
     fig, ax = plt.subplots()
     df.plot(kind="bar", ax=ax)
@@ -139,38 +109,66 @@ def grafico_bar(df, titulo):
     ax.legend(title="Período")
     return fig
 
+def grafico_pizza(series, titulo):
+    valores = series.abs()
+    total = valores.sum()
+    if total == 0:
+        return None
+
+    fig, ax = plt.subplots(figsize=(5, 5))
+    ax.pie(
+        valores,
+        autopct=lambda p: f"{p:.1f}%",
+        startangle=90,
+        pctdistance=1.15,
+        labeldistance=1.3,
+        textprops={"fontsize": 8}
+    )
+    ax.legend(
+        valores.index,
+        loc="center left",
+        bbox_to_anchor=(1, 0.5),
+        fontsize=8
+    )
+    ax.set_title(titulo)
+    ax.axis("equal")
+    return fig
+
+def bloco_analise(df, categoria, titulo_base):
+    pivot = df.pivot_table(
+        index=categoria,
+        columns="Periodo",
+        values="Valor",
+        aggfunc="sum",
+        fill_value=0
+    )
+
+    percent = pivot.div(pivot.sum(axis=0), axis=1) * 100
+    tabela = pivot.round(2).astype(str) + " € | " + percent.round(1).astype(str) + " %"
+
+    st.markdown(f"### {titulo_base} por {categoria}")
+    st.dataframe(tabela, use_container_width=True)
+    st.pyplot(grafico_bar(pivot, f"{titulo_base} por {categoria} (€)"))
+
+    for p in pivot.columns:
+        fig = grafico_pizza(pivot[p], f"{titulo_base} – {categoria} (%) | {p}")
+        if fig:
+            st.pyplot(fig)
+
 # ================= RECEITAS =================
-st.subheader("📌 Receitas – Comparativo")
+st.subheader("📌 Receitas – Distribuição e Comparação")
 for cat in ["Modalidade", "Tipo", "Professor", "Local"]:
     if cat in receitas.columns and not receitas.empty:
-        pivot = receitas.pivot_table(
-            index=cat,
-            columns="Periodo",
-            values="Valor",
-            aggfunc="sum",
-            fill_value=0
-        )
-        st.markdown(f"**Receitas por {cat}**")
-        st.dataframe(pivot)
-        st.pyplot(grafico_bar(pivot, f"Receitas por {cat}"))
+        bloco_analise(receitas, cat, "Receitas")
 
 # ================= DESPESAS =================
-st.subheader("📌 Despesas – Comparativo")
+st.subheader("📌 Despesas – Distribuição e Comparação")
 for cat in ["Classe", "Local"]:
     if cat in despesas.columns and not despesas.empty:
-        pivot = despesas.pivot_table(
-            index=cat,
-            columns="Periodo",
-            values="Valor",
-            aggfunc="sum",
-            fill_value=0
-        )
-        st.markdown(f"**Despesas por {cat}**")
-        st.dataframe(pivot)
-        st.pyplot(grafico_bar(pivot, f"Despesas por {cat}"))
+        bloco_analise(despesas, cat, "Despesas")
 
-# ================= EXPORTAR PPT =================
-st.subheader("💾 Exportar PowerPoint (leve)")
+# ================= POWERPOINT =================
+st.subheader("💾 Exportar PowerPoint")
 
 def slide_fig(prs, fig, titulo):
     slide = prs.slides.add_slide(prs.slide_layouts[5])
@@ -191,6 +189,5 @@ if st.button("🖇️ Gerar PowerPoint"):
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pptx")
     prs.save(tmp.name)
-
     st.success("PowerPoint gerado com sucesso")
     st.markdown(f"[👉 Abrir PowerPoint]({tmp.name})", unsafe_allow_html=True)
