@@ -121,13 +121,21 @@ def gerar_grafico_pizza(df_grupo, titulo):
     df_grupo_abs = df_grupo.abs()
     fig, ax = plt.subplots(figsize=(5,5))
     
+    n_fatias = len(df_grupo_abs)
+    if n_fatias <= 5:
+        font_size = 10
+    elif n_fatias <= 10:
+        font_size = 8
+    else:
+        font_size = 6
+    
     wedges, texts, autotexts = ax.pie(
         df_grupo_abs,
         startangle=90,
         autopct=lambda pct: f"{pct:.1f}%",
-        textprops={"fontsize": 8},
-        pctdistance=1.1,   # % fora da fatia
-        labeldistance=1.2  # rótulos um pouco mais fora
+        textprops={"fontsize": font_size},
+        pctdistance=1.1,
+        labeldistance=1.2
     )
     
     ax.legend(
@@ -138,10 +146,9 @@ def gerar_grafico_pizza(df_grupo, titulo):
         fontsize=8
     )
     
-    # garantir cor preta nos textos
     for autotext in autotexts:
         autotext.set_color('black')
-        autotext.set_fontsize(8)
+        autotext.set_fontsize(font_size)
     
     ax.set_title(titulo)
     ax.axis("equal")
