@@ -60,11 +60,20 @@ def ler_despesas(ficheiros):
         df_temp["Dia"] = df_temp["Data"].dt.day
         df_temp["Ano"] = df_temp["Data"].dt.year
         df_temp["Trimestre"] = df_temp["Data"].dt.to_period("Q").astype(str)
-        df_temp["Nome do cliente"] = df_temp["Descrição"].astype(str).str.strip().str.upper()
+        
+        # Mapeamento correto das colunas de despesas
+        df_temp["Nome do cliente"] = df_temp["Descrição da Despesa"].astype(str).str.strip().str.upper()
         df_temp["Valor"] = df_temp["Valor"].astype(float)
         df_temp["Modalidade"] = df_temp["Classe"].astype(str).str.strip().str.upper()
+        
+        # Colunas de receitas que não existem em despesas
+        for col in ["Tipo", "Professor"]:
+            if col not in df_temp.columns:
+                df_temp[col] = "N/A"
+        # Local já existe
         df_temp["Ativo"] = True
         df_temp["É Perda"] = False
+        
         dfs.append(df_temp)
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
@@ -121,7 +130,6 @@ def gerar_grafico_bar(df_grupo, titulo):
     ax.set_xticklabels(df_grupo.index.astype(str), rotation=45, ha="right")
     for bar in bars:
         ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(), f"{bar.get_height():,.2f}", ha="center", va="bottom", fontsize=8)
-    st.pyplot(fig)
     return fig
 
 def gerar_grafico_pizza(df_grupo, titulo):
@@ -130,7 +138,6 @@ def gerar_grafico_pizza(df_grupo, titulo):
     ax.legend(df_grupo.index, title="Legenda", loc="center left", bbox_to_anchor=(1,0.5), fontsize=8)
     ax.set_title(titulo)
     ax.axis("equal")
-    st.pyplot(fig)
     return fig
 
 # ================= DASHBOARD LADO A LADO =================
@@ -146,6 +153,8 @@ for cat in categorias:
             st.dataframe(receita_grupo)
             fig_receita_bar = gerar_grafico_bar(receita_grupo, f"Receitas por {cat}")
             fig_receita_pizza = gerar_grafico_pizza(receita_grupo, f"% Receitas por {cat}")
+            st.pyplot(fig_receita_bar)
+            st.pyplot(fig_receita_pizza)
     with col_despesa:
         st.markdown(f"**Despesas – {cat}**")
         if cat in despesas.columns:
@@ -153,6 +162,8 @@ for cat in categorias:
             st.dataframe(despesa_grupo)
             fig_despesa_bar = gerar_grafico_bar(despesa_grupo, f"Despesas por {cat}")
             fig_despesa_pizza = gerar_grafico_pizza(despesa_grupo, f"% Despesas por {cat}")
+            st.pyplot(fig_despesa_bar)
+            st.pyplot(fig_despesa_pizza)
 
 # ================= COMPARATIVO =================
 st.subheader("📌 Comparativo Receita x Despesa por Modalidade")
