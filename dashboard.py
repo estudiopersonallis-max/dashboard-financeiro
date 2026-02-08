@@ -79,10 +79,44 @@ col4.metric("🎟️ Ticket Médio", f"€ {ticket_medio:,.2f}")
 
 st.divider()
 
-# ================= FUNÇÃO PIZZA =================
-def grafico_pizza(series, titulo):
+# ================= FUNÇÕES DE GRÁFICO =================
+def bar_chart_com_valor(series, titulo, prefixo=""):
+    fig, ax = plt.subplots()
+    bars = ax.bar(series.index.astype(str), series.values)
+    ax.set_title(titulo)
+    ax.set_xticklabels(series.index.astype(str), rotation=45, ha="right")
+
+    for bar in bars:
+        altura = bar.get_height()
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            altura,
+            f"{prefixo}{altura:,.2f}" if prefixo else f"{int(altura)}",
+            ha="center",
+            va="bottom",
+            fontsize=8
+        )
+
+    st.pyplot(fig)
+
+
+def pizza_com_valor(series, titulo, prefixo=""):
+    total = series.sum()
+
+    def autopct_func(pct):
+        valor = pct * total / 100
+        if prefixo:
+            return f"{prefixo}{valor:,.2f}\n({pct:.1f}%)"
+        else:
+            return f"{int(valor)}\n({pct:.1f}%)"
+
     fig, ax = plt.subplots(figsize=(5, 5))
-    ax.pie(series, startangle=90)
+    ax.pie(
+        series,
+        startangle=90,
+        autopct=autopct_func,
+        textprops={"fontsize": 8}
+    )
     ax.legend(
         series.index,
         title="Legenda",
@@ -98,44 +132,29 @@ def grafico_pizza(series, titulo):
 st.subheader("📌 Valor por Modalidade")
 valor_modalidade = df_filtro.groupby("Modalidade")["Valor"].sum()
 st.dataframe(valor_modalidade)
-st.bar_chart(valor_modalidade)
-grafico_pizza(valor_modalidade, "% Valor por Modalidade")
+bar_chart_com_valor(valor_modalidade, "Valor por Modalidade (€)", "€ ")
+pizza_com_valor(valor_modalidade, "% Valor por Modalidade", "€ ")
 
 # ================= TIPO =================
 st.subheader("📌 Valor por Tipo")
 valor_tipo = df_filtro.groupby("Tipo")["Valor"].sum()
 st.dataframe(valor_tipo)
-st.bar_chart(valor_tipo)
-grafico_pizza(valor_tipo, "% Valor por Tipo")
+bar_chart_com_valor(valor_tipo, "Valor por Tipo (€)", "€ ")
+pizza_com_valor(valor_tipo, "% Valor por Tipo", "€ ")
 
 # ================= PROFESSOR =================
 st.subheader("📌 Valor por Professor")
 valor_professor = df_filtro.groupby("Professor")["Valor"].sum()
 st.dataframe(valor_professor)
-st.bar_chart(valor_professor)
-grafico_pizza(valor_professor, "% Valor por Professor")
+bar_chart_com_valor(valor_professor, "Valor por Professor (€)", "€ ")
+pizza_com_valor(valor_professor, "% Valor por Professor", "€ ")
 
 # ================= LOCAL =================
 st.subheader("📌 Valor por Local")
 valor_local = df_filtro.groupby("Local")["Valor"].sum()
 st.dataframe(valor_local)
-st.bar_chart(valor_local)
-grafico_pizza(valor_local, "% Valor por Local")
-
-st.divider()
-
-# ================= PERÍODO DO MÊS =================
-st.subheader("📅 Valor por Período do Mês")
-
-valor_periodo = pd.Series({
-    "Dias 1–10": df_filtro[df_filtro["Dia"] <= 10]["Valor"].sum(),
-    "Dias 11–20": df_filtro[(df_filtro["Dia"] > 10) & (df_filtro["Dia"] <= 20)]["Valor"].sum(),
-    "Dias 21–fim": df_filtro[df_filtro["Dia"] > 20]["Valor"].sum()
-})
-
-st.dataframe(valor_periodo)
-st.bar_chart(valor_periodo)
-grafico_pizza(valor_periodo, "% Valor por Período do Mês")
+bar_chart_com_valor(valor_local, "Valor por Local (€)", "€ ")
+pizza_com_valor(valor_local, "% Valor por Local", "€ ")
 
 st.divider()
 
@@ -143,35 +162,18 @@ st.divider()
 st.subheader("👥 Clientes por Local")
 clientes_local = df_filtro[df_filtro["Ativo"]].groupby("Local")["Nome do cliente"].nunique()
 st.dataframe(clientes_local)
-st.bar_chart(clientes_local)
-grafico_pizza(clientes_local, "% Clientes por Local")
+bar_chart_com_valor(clientes_local, "Clientes por Local")
+pizza_com_valor(clientes_local, "% Clientes por Local")
 
 st.subheader("👥 Clientes por Professor")
 clientes_professor = df_filtro[df_filtro["Ativo"]].groupby("Professor")["Nome do cliente"].nunique()
 st.dataframe(clientes_professor)
-st.bar_chart(clientes_professor)
-grafico_pizza(clientes_professor, "% Clientes por Professor")
+bar_chart_com_valor(clientes_professor, "Clientes por Professor")
+pizza_com_valor(clientes_professor, "% Clientes por Professor")
 
 st.divider()
-
-# ================= TICKET =================
-st.subheader("🎟️ Ticket Médio por Tipo")
-ticket_tipo = (
-    df_filtro.groupby("Tipo")["Valor"].sum()
-    / df_filtro[df_filtro["Ativo"]].groupby("Tipo")["Nome do cliente"].nunique()
-)
-st.dataframe(ticket_tipo)
-st.bar_chart(ticket_tipo)
-
-st.divider()
-
-# ================= COMPARATIVO GLOBAL =================
-st.header("📈 Comparativo Global")
-valor_por_mes = df.groupby("Mes")["Valor"].sum()
-st.line_chart(valor_por_mes)
 
 # ================= RELATÓRIO HTML =================
-st.divider()
 st.header("📄 Relatório")
 
 if st.button("🧾 Gerar relatório em HTML"):
