@@ -21,17 +21,14 @@ dfs = []
 for file in uploaded_files:
     df_temp = pd.read_excel(file)
 
-    # Mês pelo nome do ficheiro
     mes_ficheiro = file.name.replace(".xlsx", "")
     df_temp["Mes"] = mes_ficheiro
 
-    # Datas auxiliares
     df_temp["Data"] = pd.to_datetime(df_temp["Data"])
     df_temp["Dia"] = df_temp["Data"].dt.day
     df_temp["Ano"] = df_temp["Data"].dt.year
     df_temp["Trimestre"] = df_temp["Data"].dt.to_period("Q").astype(str)
 
-    # Normalizar cliente
     df_temp["Nome do cliente"] = (
         df_temp["Nome do cliente"]
         .astype(str)
@@ -39,9 +36,7 @@ for file in uploaded_files:
         .str.upper()
     )
 
-    # ================= ATIVOS (COLUNA C) =================
     coluna_status = df_temp.columns[2]
-
     df_temp["Ativo"] = (
         df_temp[coluna_status]
         .astype(str)
@@ -50,7 +45,6 @@ for file in uploaded_files:
         .eq("ATIVO")
     )
 
-    # Perdas
     df_temp["É Perda"] = df_temp["Perdas"].notna()
 
     dfs.append(df_temp)
@@ -66,11 +60,9 @@ tipo_periodo = st.selectbox(
 if tipo_periodo == "Mês (ficheiro)":
     periodo = st.selectbox("Selecione o mês", sorted(df["Mes"].unique()))
     df_filtro = df[df["Mes"] == periodo]
-
 elif tipo_periodo == "Trimestre":
     periodo = st.selectbox("Selecione o trimestre", sorted(df["Trimestre"].unique()))
     df_filtro = df[df["Trimestre"] == periodo]
-
 else:
     periodo = st.selectbox("Selecione o ano", sorted(df["Ano"].unique()))
     df_filtro = df[df["Ano"] == periodo]
@@ -97,11 +89,17 @@ valor_modalidade = df_filtro.groupby("Modalidade")["Valor"].sum()
 st.dataframe(valor_modalidade)
 st.bar_chart(valor_modalidade)
 
+st.subheader("📊 % do Valor por Modalidade")
+st.bar_chart((valor_modalidade / total_valor) * 100)
+
 # ================= TIPO =================
 st.subheader("📌 Valor por Tipo")
 valor_tipo = df_filtro.groupby("Tipo")["Valor"].sum()
 st.dataframe(valor_tipo)
 st.bar_chart(valor_tipo)
+
+st.subheader("📊 % do Valor por Tipo")
+st.bar_chart((valor_tipo / total_valor) * 100)
 
 # ================= PROFESSOR =================
 st.subheader("📌 Valor por Professor")
@@ -109,15 +107,21 @@ valor_professor = df_filtro.groupby("Professor")["Valor"].sum()
 st.dataframe(valor_professor)
 st.bar_chart(valor_professor)
 
+st.subheader("📊 % do Valor por Professor")
+st.bar_chart((valor_professor / total_valor) * 100)
+
 # ================= LOCAL =================
 st.subheader("📌 Valor por Local")
 valor_local = df_filtro.groupby("Local")["Valor"].sum()
 st.dataframe(valor_local)
 st.bar_chart(valor_local)
 
+st.subheader("📊 % do Valor por Local")
+st.bar_chart((valor_local / total_valor) * 100)
+
 st.divider()
 
-# ================= PERÍODOS DO MÊS =================
+# ================= PERÍODO DO MÊS =================
 st.subheader("📅 Valor por Período do Mês")
 
 valor_periodo = pd.Series({
@@ -129,87 +133,32 @@ valor_periodo = pd.Series({
 st.dataframe(valor_periodo)
 st.bar_chart(valor_periodo)
 
+st.subheader("📊 % do Valor por Período do Mês")
+st.bar_chart((valor_periodo / total_valor) * 100)
+
 st.divider()
 
 # ================= CLIENTES =================
-st.subheader("👥 Clientes")
-
-clientes_local = df_filtro.groupby("Local")["Nome do cliente"].nunique()
-st.dataframe(clientes_local.rename("Clientes por Local"))
+st.subheader("👥 Clientes por Local")
+clientes_local = df_filtro[df_filtro["Ativo"]].groupby("Local")["Nome do cliente"].nunique()
+st.dataframe(clientes_local)
 st.bar_chart(clientes_local)
 
-clientes_professor = df_filtro.groupby("Professor")["Nome do cliente"].nunique()
-st.dataframe(clientes_professor.rename("Clientes por Professor"))
+st.subheader("📊 % Clientes por Local")
+st.bar_chart((clientes_local / clientes_ativos) * 100)
+
+st.subheader("👥 Clientes por Professor")
+clientes_professor = df_filtro[df_filtro["Ativo"]].groupby("Professor")["Nome do cliente"].nunique()
+st.dataframe(clientes_professor)
 st.bar_chart(clientes_professor)
 
+st.subheader("📊 % Clientes por Professor")
+st.bar_chart((clientes_professor / clientes_ativos) * 100)
+
 st.divider()
 
-# ================= TICKET POR TIPO =================
+# ================= TICKET =================
 st.subheader("🎟️ Ticket Médio por Tipo")
-
 ticket_tipo = (
     df_filtro.groupby("Tipo")["Valor"].sum()
-    / df_filtro[df_filtro["Ativo"]].groupby("Tipo")["Nome do cliente"].nunique()
-)
-
-st.dataframe(ticket_tipo)
-st.bar_chart(ticket_tipo)
-
-st.divider()
-
-# ================= RELATÓRIO HTML =================
-st.header("📄 Relatório")
-
-html = f"""
-<html>
-<head>
-<meta charset="utf-8">
-<title>Relatório Financeiro - {periodo}</title>
-<style>
-body {{ font-family: Arial; margin: 40px; }}
-h1 {{ color: #2c3e50; }}
-table {{ border-collapse: collapse; width: 70%; }}
-th, td {{ border: 1px solid #ccc; padding: 8px; text-align: right; }}
-th {{ background-color: #f2f2f2; }}
-</style>
-</head>
-<body>
-
-<h1>Relatório Financeiro – {periodo}</h1>
-
-<ul>
-<li><strong>Valor Total:</strong> € {total_valor:,.2f}</li>
-<li><strong>Clientes Ativos:</strong> {clientes_ativos}</li>
-<li><strong>Perdas:</strong> {perdas}</li>
-<li><strong>Ticket Médio:</strong> € {ticket_medio:,.2f}</li>
-</ul>
-
-<h2>Valor por Modalidade</h2>
-{valor_modalidade.to_frame("Valor").to_html()}
-
-<h2>Valor por Tipo</h2>
-{valor_tipo.to_frame("Valor").to_html()}
-
-<h2>Valor por Professor</h2>
-{valor_professor.to_frame("Valor").to_html()}
-
-<h2>Valor por Local</h2>
-{valor_local.to_frame("Valor").to_html()}
-
-</body>
-</html>
-"""
-
-st.download_button(
-    "⬇️ Baixar Relatório HTML",
-    data=html,
-    file_name=f"relatorio_{periodo}.html",
-    mime="text/html"
-)
-
-# ================= COMPARATIVO GLOBAL =================
-st.divider()
-st.header("📈 Comparativo Global")
-
-valor_por_mes = df.groupby("Mes")["Valor"].sum()
-st.line_chart(valor_por_mes)
+    / df_filtro[df_filtro["Ativo"]].groupby("T_]()_
