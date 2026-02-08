@@ -120,6 +120,9 @@ st.divider()
 
 # ================= FUNÇÕES DE GRÁFICOS =================
 def gerar_grafico_bar(df_grupo, titulo):
+    if df_grupo.empty:
+        st.warning(f"⚠️ Nenhum dado disponível para '{titulo}'")
+        return None
     fig, ax = plt.subplots()
     bars = ax.bar(df_grupo.index.astype(str), df_grupo.values)
     ax.set_title(titulo)
@@ -129,6 +132,9 @@ def gerar_grafico_bar(df_grupo, titulo):
     return fig
 
 def gerar_grafico_pizza(df_grupo, titulo):
+    if df_grupo.empty or df_grupo.sum() == 0:
+        st.warning(f"⚠️ Nenhum dado disponível para '{titulo}'")
+        return None
     fig, ax = plt.subplots(figsize=(5,5))
     ax.pie(df_grupo, startangle=90, autopct="%1.1f%%", textprops={"fontsize": 8})
     ax.legend(df_grupo.index, title="Legenda", loc="center left", bbox_to_anchor=(1,0.5), fontsize=8)
@@ -149,8 +155,8 @@ for cat in categorias:
             st.dataframe(receita_grupo)
             fig_receita_bar = gerar_grafico_bar(receita_grupo, f"Receitas por {cat}")
             fig_receita_pizza = gerar_grafico_pizza(receita_grupo, f"% Receitas por {cat}")
-            st.pyplot(fig_receita_bar)
-            st.pyplot(fig_receita_pizza)
+            if fig_receita_bar: st.pyplot(fig_receita_bar)
+            if fig_receita_pizza: st.pyplot(fig_receita_pizza)
     with col_despesa:
         st.markdown(f"**Despesas – {cat}**")
         if cat in despesas.columns:
@@ -158,8 +164,8 @@ for cat in categorias:
             st.dataframe(despesa_grupo)
             fig_despesa_bar = gerar_grafico_bar(despesa_grupo, f"Despesas por {cat}")
             fig_despesa_pizza = gerar_grafico_pizza(despesa_grupo, f"% Despesas por {cat}")
-            st.pyplot(fig_despesa_bar)
-            st.pyplot(fig_despesa_pizza)
+            if fig_despesa_bar: st.pyplot(fig_despesa_bar)
+            if fig_despesa_pizza: st.pyplot(fig_despesa_pizza)
 
 # ================= COMPARATIVO =================
 st.subheader("📌 Comparativo Receita x Despesa por Modalidade")
@@ -179,6 +185,8 @@ st.pyplot(fig_comparativo)
 st.subheader("💾 Exportar para PowerPoint")
 
 def adicionar_figura_slide(prs, fig, titulo):
+    if fig is None: 
+        return
     slide = prs.slides.add_slide(prs.slide_layouts[5])
     slide.shapes.title.text = titulo
     img_stream = BytesIO()
