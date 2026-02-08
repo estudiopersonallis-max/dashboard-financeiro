@@ -35,16 +35,13 @@ def ler_receitas(ficheiros):
         df_temp = pd.read_excel(file)
         if df_temp.empty:
             continue
-        mes_ficheiro = file.name.replace(".xlsx", "")
-        df_temp["Mes"] = mes_ficheiro
-        df_temp["Data"] = pd.to_datetime(df_temp["Data"])
-        df_temp["Dia"] = df_temp["Data"].dt.day
-        df_temp["Ano"] = df_temp["Data"].dt.year
-        df_temp["Trimestre"] = df_temp["Data"].dt.to_period("Q").astype(str)
         df_temp["Nome do cliente"] = df_temp["Nome do cliente"].astype(str).str.strip().str.upper()
         coluna_status = df_temp.columns[2]
         df_temp["Ativo"] = df_temp[coluna_status].astype(str).str.strip().str.upper().eq("ATIVO")
-        df_temp["É Perda"] = df_temp["Perdas"].notna()
+        df_temp["É Perda"] = df_temp["Perdas"].notna() if "Perdas" in df_temp.columns else False
+        df_temp["Valor"] = df_temp["Valor"].astype(float)
+        df_temp["Modalidade"] = df_temp["Modalidade"] if "Modalidade" in df_temp.columns else "N/A"
+        df_temp["Local"] = df_temp["Local"] if "Local" in df_temp.columns else "N/A"
         dfs.append(df_temp)
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
@@ -52,29 +49,19 @@ def ler_despesas(ficheiros):
     dfs = []
     for file in ficheiros:
         df_temp = pd.read_excel(file)
-        if df_temp.empty:
-            continue
-        # Remover linhas sem Valor ou sem descrição/modalidade
+        # Remove linhas sem Valor ou sem descrição/modalidade
         df_temp = df_temp.dropna(subset=["Valor", "Descrição da Despesa", "Classe"])
         if df_temp.empty:
             continue
-
-        mes_ficheiro = file.name.replace(".xlsx", "")
-        df_temp["Mes"] = mes_ficheiro
 
         # Mapear colunas
         df_temp["Nome do cliente"] = df_temp["Descrição da Despesa"].astype(str).str.strip().str.upper()
         df_temp["Valor"] = df_temp["Valor"].astype(float)
         df_temp["Modalidade"] = df_temp["Classe"].astype(str).str.strip().str.upper()
         df_temp["Local"] = df_temp["Local"].astype(str).str.strip()
-
-        # Preencher colunas faltantes para compatibilidade
-        for col in ["Tipo", "Professor", "Data", "Dia", "Ano", "Trimestre"]:
-            if col not in df_temp.columns:
-                df_temp[col] = "N/A"
-
         df_temp["Ativo"] = True
         df_temp["É Perda"] = False
+
         dfs.append(df_temp)
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
@@ -82,42 +69,36 @@ def ler_despesas(ficheiros):
 receitas = ler_receitas(uploaded_receitas) if uploaded_receitas else pd.DataFrame()
 despesas = ler_despesas(uploaded_despesas) if uploaded_despesas else pd.DataFrame()
 
-# ================= FILTRO =================
-tipo_periodo = st.selectbox(
-    "📅 Tipo de análise",
-    ["Mês (ficheiro)", "Trimestre", "Ano"]
-)
+# ================= REDISTRIBUIR DESPESAS COM LOCAL = 'GERAL' =================
+if not despesas.empty and not receitas.empty:
+    # Contar ativos por Local a partir das receitas
+    ativos_local = receitas[receitas["Ativo"]].groupby("Local")["Nome do cliente"].nunique()
+    # Selecionar despesas "Geral"
+    geral_mask = despesas["Local"].str.upper() == "GERAL"
+    despesas_geral = despesas[geral_mask]
+    despesas_nao_geral = despesas[~geral_mask]
 
-# Função segura para obter períodos disponíveis
-def obter_periodos(df1, df2, coluna):
-    vals1 = df1[coluna].unique() if not df1.empty else []
-    vals2 = df2[coluna].unique() if not df2.empty else []
-    return sorted(set(vals1).union(set(vals2)))
-
-if tipo_periodo == "Mês (ficheiro)":
-    periodos_disponiveis = obter_periodos(receitas, despesas, "Mes")
-    periodo = st.selectbox("Selecione o mês", periodos_disponiveis)
-    receitas_filtro = receitas[receitas["Mes"] == periodo] if not receitas.empty else pd.DataFrame()
-    despesas_filtro = despesas[despesas["Mes"] == periodo] if not despesas.empty else pd.DataFrame()
-elif tipo_periodo == "Trimestre":
-    periodos_disponiveis = obter_periodos(receitas, despesas, "Trimestre")
-    periodo = st.selectbox("Selecione o trimestre", periodos_disponiveis)
-    receitas_filtro = receitas[receitas["Trimestre"] == periodo] if not receitas.empty else pd.DataFrame()
-    despesas_filtro = despesas[despesas["Trimestre"] == periodo] if not despesas.empty else pd.DataFrame()
-else:
-    periodos_disponiveis = obter_periodos(receitas, despesas, "Ano")
-    periodo = st.selectbox("Selecione o ano", periodos_disponiveis)
-    receitas_filtro = receitas[receitas["Ano"] == periodo] if not receitas.empty else pd.DataFrame()
-    despesas_filtro = despesas[despesas["Ano"] == periodo] if not despesas.empty else pd.DataFrame()
-
-st.caption(f"📌 Período selecionado: **{periodo}**")
+    # Redistribuir
+    redistribuidas = []
+    for idx, row in despesas_geral.iterrows():
+        total_ativos = ativos_local.sum()
+        for loc, n_ativos in ativos_local.items():
+            nova_linha = row.copy()
+            nova_linha["Valor"] = row["Valor"] * n_ativos / total_ativos
+            nova_linha["Local"] = loc
+            redistribuidas.append(nova_linha)
+    if redistribuidas:
+        despesas_redistribuidas = pd.DataFrame(redistribuidas)
+        despesas = pd.concat([despesas_nao_geral, despesas_redistribuidas], ignore_index=True)
+    else:
+        despesas = despesas_nao_geral
 
 # ================= KPIs =================
-clientes_ativos = receitas_filtro.loc[receitas_filtro["Ativo"], "Nome do cliente"].nunique() if not receitas_filtro.empty else 0
-total_receita = receitas_filtro["Valor"].sum() if not receitas_filtro.empty else 0
-perdas = int(receitas_filtro["É Perda"].sum()) if not receitas_filtro.empty else 0
+clientes_ativos = receitas.loc[receitas["Ativo"], "Nome do cliente"].nunique() if not receitas.empty else 0
+total_receita = receitas["Valor"].sum() if not receitas.empty else 0
+perdas = int(receitas["É Perda"].sum()) if not receitas.empty else 0
 ticket_medio = total_receita / clientes_ativos if clientes_ativos > 0 else 0
-total_despesa = despesas_filtro["Valor"].sum() if not despesas_filtro.empty else 0
+total_despesa = despesas["Valor"].sum() if not despesas.empty else 0
 lucro_liquido = total_receita - total_despesa
 
 col1, col2, col3, col4, col5 = st.columns(5)
@@ -132,6 +113,7 @@ st.divider()
 # ================= FUNÇÕES DE GRÁFICOS =================
 def gerar_grafico_bar(df_grupo, titulo):
     df_grupo = df_grupo.dropna()
+    df_grupo = df_grupo[df_grupo > 0]
     if df_grupo.empty:
         return None
     fig, ax = plt.subplots()
@@ -144,7 +126,7 @@ def gerar_grafico_bar(df_grupo, titulo):
 
 def gerar_grafico_pizza(df_grupo, titulo):
     df_grupo = df_grupo.dropna()
-    df_grupo = df_grupo[df_grupo > 0]  # filtra zeros
+    df_grupo = df_grupo[df_grupo > 0]
     if df_grupo.empty:
         return None
     fig, ax = plt.subplots(figsize=(5,5))
@@ -155,26 +137,26 @@ def gerar_grafico_pizza(df_grupo, titulo):
     return fig
 
 # ================= DASHBOARD LADO A LADO =================
-categorias = ["Modalidade", "Tipo", "Professor", "Local"]
+st.subheader("📌 Receitas x Despesas")
 
-st.subheader("📌 Receitas x Despesas por Categoria")
-for cat in categorias:
+categorias_receita = ["Modalidade", "Tipo", "Professor", "Local"]
+categorias_despesa = ["Modalidade", "Local"]
+
+for cat in categorias_receita:
     col_receita, col_despesa = st.columns(2)
     with col_receita:
         st.markdown(f"**Receitas – {cat}**")
-        if cat in receitas_filtro.columns:
-            receita_grupo = receitas_filtro.groupby(cat)["Valor"].sum()
+        if cat in receitas.columns:
+            receita_grupo = receitas.groupby(cat)["Valor"].sum()
             st.dataframe(receita_grupo)
             fig_receita_bar = gerar_grafico_bar(receita_grupo, f"Receitas por {cat}")
             fig_receita_pizza = gerar_grafico_pizza(receita_grupo, f"% Receitas por {cat}")
             if fig_receita_bar: st.pyplot(fig_receita_bar)
             if fig_receita_pizza: st.pyplot(fig_receita_pizza)
     with col_despesa:
-        st.markdown(f"**Despesas – {cat}**")
-        if cat in despesas_filtro.columns:
-            # remover linhas sem categoria
-            despesas_filtradas = despesas_filtro[despesas_filtro[cat].notna() & (despesas_filtro[cat] != "")]
-            despesa_grupo = despesas_filtradas.groupby(cat)["Valor"].sum()
+        if cat in categorias_despesa:
+            st.markdown(f"**Despesas – {cat}**")
+            despesa_grupo = despesas.groupby(cat)["Valor"].sum()
             st.dataframe(despesa_grupo)
             fig_despesa_bar = gerar_grafico_bar(despesa_grupo, f"Despesas por {cat}")
             fig_despesa_pizza = gerar_grafico_pizza(despesa_grupo, f"% Despesas por {cat}")
@@ -183,8 +165,8 @@ for cat in categorias:
 
 # ================= COMPARATIVO =================
 st.subheader("📌 Comparativo Receita x Despesa por Modalidade")
-receita_modalidade = receitas_filtro.groupby("Modalidade")["Valor"].sum() if not receitas_filtro.empty else pd.Series()
-despesa_modalidade = despesas_filtro.groupby("Modalidade")["Valor"].sum() if not despesas_filtro.empty else pd.Series()
+receita_modalidade = receitas.groupby("Modalidade")["Valor"].sum() if not receitas.empty else pd.Series()
+despesa_modalidade = despesas.groupby("Modalidade")["Valor"].sum() if not despesas.empty else pd.Series()
 comparativo = pd.concat([receita_modalidade, despesa_modalidade], axis=1).fillna(0)
 comparativo.columns = ["Receita", "Despesa"]
 st.dataframe(comparativo)
@@ -221,17 +203,21 @@ def adicionar_tabela_slide(prs, df, titulo):
 
 if st.button("🖇️ Gerar PowerPoint Automático"):
     prs = Presentation()
-    for cat in categorias:
-        if cat in receitas_filtro.columns:
-            receita_grupo = receitas_filtro.groupby(cat)["Valor"].sum()
-            despesas_filtradas = despesas_filtro[despesas_filtro[cat].notna() & (despesas_filtro[cat] != "")]
-            despesa_grupo = despesas_filtradas.groupby(cat)["Valor"].sum()
+    for cat in categorias_receita:
+        if cat in receitas.columns:
+            receita_grupo = receitas.groupby(cat)["Valor"].sum()
+            if cat in categorias_despesa:
+                despesa_grupo = despesas.groupby(cat)["Valor"].sum()
+            else:
+                despesa_grupo = None
             adicionar_figura_slide(prs, gerar_grafico_bar(receita_grupo, f"Receitas por {cat}"), f"Receitas por {cat}")
             adicionar_figura_slide(prs, gerar_grafico_pizza(receita_grupo, f"% Receitas por {cat}"), f"% Receitas por {cat}")
             adicionar_figura_slide(prs, gerar_grafico_bar(despesa_grupo, f"Despesas por {cat}"), f"Despesas por {cat}")
             adicionar_figura_slide(prs, gerar_grafico_pizza(despesa_grupo, f"% Despesas por {cat}"), f"% Despesas por {cat}")
             adicionar_tabela_slide(prs, receita_grupo.to_frame("Valor"), f"Receitas por {cat}")
-            adicionar_tabela_slide(prs, despesa_grupo.to_frame("Valor"), f"Despesas por {cat}")
+            if despesa_grupo is not None:
+                adicionar_tabela_slide(prs, despesa_grupo.to_frame("Valor"), f"Despesas por {cat}")
+
     adicionar_figura_slide(prs, fig_comparativo, "Comparativo Receita x Despesa")
     adicionar_tabela_slide(prs, comparativo, "Comparativo Receita x Despesa")
 
