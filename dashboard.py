@@ -100,23 +100,16 @@ def bar_chart_com_valor(series, titulo, prefixo=""):
     st.pyplot(fig)
 
 
-def pizza_com_valor(series, titulo, prefixo=""):
-    total = series.sum()
-
-    def autopct_func(pct):
-        valor = pct * total / 100
-        if prefixo:
-            return f"{prefixo}{valor:,.2f}\n({pct:.1f}%)"
-        else:
-            return f"{int(valor)}\n({pct:.1f}%)"
-
+def pizza_percentual(series, titulo):
     fig, ax = plt.subplots(figsize=(5, 5))
+
     ax.pie(
         series,
         startangle=90,
-        autopct=autopct_func,
+        autopct="%1.1f%%",
         textprops={"fontsize": 8}
     )
+
     ax.legend(
         series.index,
         title="Legenda",
@@ -124,6 +117,7 @@ def pizza_com_valor(series, titulo, prefixo=""):
         bbox_to_anchor=(1, 0.5),
         fontsize=8
     )
+
     ax.set_title(titulo)
     ax.axis("equal")
     st.pyplot(fig)
@@ -133,28 +127,28 @@ st.subheader("📌 Valor por Modalidade")
 valor_modalidade = df_filtro.groupby("Modalidade")["Valor"].sum()
 st.dataframe(valor_modalidade)
 bar_chart_com_valor(valor_modalidade, "Valor por Modalidade (€)", "€ ")
-pizza_com_valor(valor_modalidade, "% Valor por Modalidade", "€ ")
+pizza_percentual(valor_modalidade, "% Valor por Modalidade")
 
 # ================= TIPO =================
 st.subheader("📌 Valor por Tipo")
 valor_tipo = df_filtro.groupby("Tipo")["Valor"].sum()
 st.dataframe(valor_tipo)
 bar_chart_com_valor(valor_tipo, "Valor por Tipo (€)", "€ ")
-pizza_com_valor(valor_tipo, "% Valor por Tipo", "€ ")
+pizza_percentual(valor_tipo, "% Valor por Tipo")
 
 # ================= PROFESSOR =================
 st.subheader("📌 Valor por Professor")
 valor_professor = df_filtro.groupby("Professor")["Valor"].sum()
 st.dataframe(valor_professor)
 bar_chart_com_valor(valor_professor, "Valor por Professor (€)", "€ ")
-pizza_com_valor(valor_professor, "% Valor por Professor", "€ ")
+pizza_percentual(valor_professor, "% Valor por Professor")
 
 # ================= LOCAL =================
 st.subheader("📌 Valor por Local")
 valor_local = df_filtro.groupby("Local")["Valor"].sum()
 st.dataframe(valor_local)
 bar_chart_com_valor(valor_local, "Valor por Local (€)", "€ ")
-pizza_com_valor(valor_local, "% Valor por Local", "€ ")
+pizza_percentual(valor_local, "% Valor por Local")
 
 st.divider()
 
@@ -163,13 +157,13 @@ st.subheader("👥 Clientes por Local")
 clientes_local = df_filtro[df_filtro["Ativo"]].groupby("Local")["Nome do cliente"].nunique()
 st.dataframe(clientes_local)
 bar_chart_com_valor(clientes_local, "Clientes por Local")
-pizza_com_valor(clientes_local, "% Clientes por Local")
+pizza_percentual(clientes_local, "% Clientes por Local")
 
 st.subheader("👥 Clientes por Professor")
 clientes_professor = df_filtro[df_filtro["Ativo"]].groupby("Professor")["Nome do cliente"].nunique()
 st.dataframe(clientes_professor)
 bar_chart_com_valor(clientes_professor, "Clientes por Professor")
-pizza_com_valor(clientes_professor, "% Clientes por Professor")
+pizza_percentual(clientes_professor, "% Clientes por Professor")
 
 st.divider()
 
