@@ -56,24 +56,20 @@ def ler_despesas(ficheiros):
         df_temp = pd.read_excel(file)
         mes_ficheiro = file.name.replace(".xlsx", "")
         df_temp["Mes"] = mes_ficheiro
-        df_temp["Data"] = pd.to_datetime(df_temp["Data"])
-        df_temp["Dia"] = df_temp["Data"].dt.day
-        df_temp["Ano"] = df_temp["Data"].dt.year
-        df_temp["Trimestre"] = df_temp["Data"].dt.to_period("Q").astype(str)
         
-        # Mapeamento correto das colunas de despesas
+        # Mapear colunas de despesas
         df_temp["Nome do cliente"] = df_temp["Descrição da Despesa"].astype(str).str.strip().str.upper()
         df_temp["Valor"] = df_temp["Valor"].astype(float)
         df_temp["Modalidade"] = df_temp["Classe"].astype(str).str.strip().str.upper()
+        df_temp["Local"] = df_temp["Local"].astype(str).str.strip()
         
-        # Colunas de receitas que não existem em despesas
-        for col in ["Tipo", "Professor"]:
+        # Colunas ausentes preenchidas para compatibilidade com receitas
+        for col in ["Tipo", "Professor", "Data", "Dia", "Ano", "Trimestre"]:
             if col not in df_temp.columns:
                 df_temp[col] = "N/A"
-        # Local já existe
+        
         df_temp["Ativo"] = True
         df_temp["É Perda"] = False
-        
         dfs.append(df_temp)
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
@@ -203,20 +199,16 @@ def adicionar_tabela_slide(prs, df, titulo):
 
 if st.button("🖇️ Gerar PowerPoint Automático"):
     prs = Presentation()
-    # Para cada categoria, adiciona gráficos e tabelas automaticamente
     for cat in categorias:
         if cat in receitas.columns:
             receita_grupo = receitas.groupby(cat)["Valor"].sum()
             despesa_grupo = despesas.groupby(cat)["Valor"].sum()
-            # Gráficos
             adicionar_figura_slide(prs, gerar_grafico_bar(receita_grupo, f"Receitas por {cat}"), f"Receitas por {cat}")
             adicionar_figura_slide(prs, gerar_grafico_pizza(receita_grupo, f"% Receitas por {cat}"), f"% Receitas por {cat}")
             adicionar_figura_slide(prs, gerar_grafico_bar(despesa_grupo, f"Despesas por {cat}"), f"Despesas por {cat}")
             adicionar_figura_slide(prs, gerar_grafico_pizza(despesa_grupo, f"% Despesas por {cat}"), f"% Despesas por {cat}")
-            # Tabelas
             adicionar_tabela_slide(prs, receita_grupo.to_frame("Valor"), f"Receitas por {cat}")
             adicionar_tabela_slide(prs, despesa_grupo.to_frame("Valor"), f"Despesas por {cat}")
-    # Comparativo
     adicionar_figura_slide(prs, fig_comparativo, "Comparativo Receita x Despesa")
     adicionar_tabela_slide(prs, comparativo, "Comparativo Receita x Despesa")
 
