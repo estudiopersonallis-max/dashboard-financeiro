@@ -54,20 +54,25 @@ def ler_despesas(ficheiros):
         df_temp = pd.read_excel(file)
         if df_temp.empty:
             continue
+        # Remover linhas sem Valor ou sem descrição/modalidade
+        df_temp = df_temp.dropna(subset=["Valor", "Descrição da Despesa", "Classe"])
+        if df_temp.empty:
+            continue
+
         mes_ficheiro = file.name.replace(".xlsx", "")
         df_temp["Mes"] = mes_ficheiro
-        
-        # Mapear colunas de despesas
+
+        # Mapear colunas
         df_temp["Nome do cliente"] = df_temp["Descrição da Despesa"].astype(str).str.strip().str.upper()
         df_temp["Valor"] = df_temp["Valor"].astype(float)
         df_temp["Modalidade"] = df_temp["Classe"].astype(str).str.strip().str.upper()
         df_temp["Local"] = df_temp["Local"].astype(str).str.strip()
-        
-        # Preencher colunas para compatibilidade com receitas
+
+        # Preencher colunas faltantes para compatibilidade
         for col in ["Tipo", "Professor", "Data", "Dia", "Ano", "Trimestre"]:
             if col not in df_temp.columns:
                 df_temp[col] = "N/A"
-        
+
         df_temp["Ativo"] = True
         df_temp["É Perda"] = False
         dfs.append(df_temp)
@@ -83,11 +88,11 @@ tipo_periodo = st.selectbox(
     ["Mês (ficheiro)", "Trimestre", "Ano"]
 )
 
-# Função para criar lista de períodos disponível sem KeyError
-def obter_periodos(df_receitas, df_despesas, coluna):
-    vals_receitas = df_receitas[coluna].unique() if not df_receitas.empty else []
-    vals_despesas = df_despesas[coluna].unique() if not df_despesas.empty else []
-    return sorted(set(vals_receitas).union(set(vals_despesas)))
+# Função segura para obter períodos disponíveis
+def obter_periodos(df1, df2, coluna):
+    vals1 = df1[coluna].unique() if not df1.empty else []
+    vals2 = df2[coluna].unique() if not df2.empty else []
+    return sorted(set(vals1).union(set(vals2)))
 
 if tipo_periodo == "Mês (ficheiro)":
     periodos_disponiveis = obter_periodos(receitas, despesas, "Mes")
@@ -128,7 +133,6 @@ st.divider()
 def gerar_grafico_bar(df_grupo, titulo):
     df_grupo = df_grupo.dropna()
     if df_grupo.empty:
-        st.warning(f"⚠️ Nenhum dado disponível para '{titulo}'")
         return None
     fig, ax = plt.subplots()
     bars = ax.bar(df_grupo.index.astype(str), df_grupo.values)
@@ -142,7 +146,6 @@ def gerar_grafico_pizza(df_grupo, titulo):
     df_grupo = df_grupo.dropna()
     df_grupo = df_grupo[df_grupo > 0]  # filtra zeros
     if df_grupo.empty:
-        st.warning(f"⚠️ Nenhum dado disponível para '{titulo}'")
         return None
     fig, ax = plt.subplots(figsize=(5,5))
     ax.pie(df_grupo, startangle=90, autopct="%1.1f%%", textprops={"fontsize": 8})
@@ -169,7 +172,9 @@ for cat in categorias:
     with col_despesa:
         st.markdown(f"**Despesas – {cat}**")
         if cat in despesas_filtro.columns:
-            despesa_grupo = despesas_filtro.groupby(cat)["Valor"].sum()
+            # remover linhas sem categoria
+            despesas_filtradas = despesas_filtro[despesas_filtro[cat].notna() & (despesas_filtro[cat] != "")]
+            despesa_grupo = despesas_filtradas.groupby(cat)["Valor"].sum()
             st.dataframe(despesa_grupo)
             fig_despesa_bar = gerar_grafico_bar(despesa_grupo, f"Despesas por {cat}")
             fig_despesa_pizza = gerar_grafico_pizza(despesa_grupo, f"% Despesas por {cat}")
@@ -190,7 +195,7 @@ ax.set_title("Comparativo Receita x Despesa por Modalidade")
 ax.set_ylabel("€")
 st.pyplot(fig_comparativo)
 
-# ================= EXPORTAR POWERPOINT AUTOMÁTICO =================
+# ================= EXPORTAR POWERPOINT =================
 st.subheader("💾 Exportar para PowerPoint")
 
 def adicionar_figura_slide(prs, fig, titulo):
@@ -219,7 +224,8 @@ if st.button("🖇️ Gerar PowerPoint Automático"):
     for cat in categorias:
         if cat in receitas_filtro.columns:
             receita_grupo = receitas_filtro.groupby(cat)["Valor"].sum()
-            despesa_grupo = despesas_filtro.groupby(cat)["Valor"].sum()
+            despesas_filtradas = despesas_filtro[despesas_filtro[cat].notna() & (despesas_filtro[cat] != "")]
+            despesa_grupo = despesas_filtradas.groupby(cat)["Valor"].sum()
             adicionar_figura_slide(prs, gerar_grafico_bar(receita_grupo, f"Receitas por {cat}"), f"Receitas por {cat}")
             adicionar_figura_slide(prs, gerar_grafico_pizza(receita_grupo, f"% Receitas por {cat}"), f"% Receitas por {cat}")
             adicionar_figura_slide(prs, gerar_grafico_bar(despesa_grupo, f"Despesas por {cat}"), f"Despesas por {cat}")
