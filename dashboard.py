@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import tempfile
-from pathlib import Path
 from io import BytesIO
 from pptx import Presentation
 from pptx.util import Inches
@@ -89,7 +88,7 @@ total_receita = receitas["Valor"].sum() if not receitas.empty else 0
 perdas = int(receitas["É Perda"].sum()) if not receitas.empty else 0
 ticket_medio = total_receita / clientes_ativos if clientes_ativos else 0
 total_despesa = despesas["Valor"].sum() if not despesas.empty else 0
-lucro_liquido = total_receita + total_despesa  # soma porque despesas são negativas
+lucro_liquido = total_receita + total_despesa  # despesas negativas, já subtraídas
 
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("💰 Total Receita", f"€ {total_receita:,.2f}")
@@ -126,9 +125,12 @@ def gerar_grafico_pizza(df_grupo, titulo):
 
 # ================= DASHBOARD =================
 st.subheader("📌 Receitas x Despesas")
-categorias_receita = ["Modalidade", "Tipo", "Professor", "Local"]
-categorias_despesa = ["Classe", "Local"]  # Classe é equivalente à Modalidade
 
+# Categorias
+categorias_receita = ["Modalidade", "Tipo", "Professor", "Local"]
+categorias_despesa = ["Classe", "Local"]
+
+# Gráficos lado a lado
 for cat in categorias_receita:
     col_receita, col_despesa = st.columns(2)
     with col_receita:
@@ -141,12 +143,13 @@ for cat in categorias_receita:
             if fig_bar: st.pyplot(fig_bar)
             if fig_pizza: st.pyplot(fig_pizza)
     with col_despesa:
-        if cat in categorias_despesa and cat in despesas.columns:
-            st.markdown(f"**Despesas – {cat}**")
-            despesa_grupo = despesas.groupby(cat)["Valor"].sum()
+        desp_cat = "Classe" if cat=="Modalidade" else cat
+        if desp_cat in categorias_despesa and desp_cat in despesas.columns:
+            st.markdown(f"**Despesas – {desp_cat}**")
+            despesa_grupo = despesas.groupby(desp_cat)["Valor"].sum()
             st.dataframe(despesa_grupo)
-            fig_bar = gerar_grafico_bar(despesa_grupo, f"Despesas por {cat}")
-            fig_pizza = gerar_grafico_pizza(despesa_grupo, f"% Despesas por {cat}")
+            fig_bar = gerar_grafico_bar(despesa_grupo, f"Despesas por {desp_cat}")
+            fig_pizza = gerar_grafico_pizza(despesa_grupo, f"% Despesas por {desp_cat}")
             if fig_bar: st.pyplot(fig_bar)
             if fig_pizza: st.pyplot(fig_pizza)
 
@@ -165,3 +168,52 @@ if not comparativo.empty:
     ax.set_title("Comparativo Receita x Despesa por Classe/Modalidade")
     ax.set_ylabel("€")
     st.pyplot(fig_comparativo)
+
+# ================= EXPORTAR POWERPOINT =================
+st.subheader("💾 Exportar para PowerPoint")
+
+def adicionar_figura_slide(prs, fig, titulo):
+    if fig is None:
+        return
+    slide = prs.slides.add_slide(prs.slide_layouts[5])
+    slide.shapes.title.text = titulo
+    img_stream = BytesIO()
+    fig.savefig(img_stream, format='png', bbox_inches='tight')
+    img_stream.seek(0)
+    slide.shapes.add_picture(img_stream, Inches(1), Inches(1.5), width=Inches(8), height=Inches(4.5))
+
+def adicionar_tabela_slide(prs, df, titulo):
+    slide = prs.slides.add_slide(prs.slide_layouts[5])
+    slide.shapes.title.text = titulo
+    rows, cols = df.shape
+    table = slide.shapes.add_table(rows+1, cols, Inches(1), Inches(1.5), Inches(8), Inches(4.5)).table
+    for j, col_name in enumerate(df.columns):
+        table.cell(0, j).text = str(col_name)
+    for i in range(rows):
+        for j in range(cols):
+            table.cell(i+1, j).text = str(df.iloc[i, j])
+
+if st.button("🖇️ Gerar PowerPoint"):
+    prs = Presentation()
+    # Receitas
+    for cat in categorias_receita:
+        if cat in receitas.columns:
+            receita_grupo = receitas.groupby(cat)["Valor"].sum()
+            adicionar_figura_slide(prs, gerar_grafico_bar(receita_grupo, f"Receitas por {cat}"), f"Receitas por {cat}")
+            adicionar_figura_slide(prs, gerar_grafico_pizza(receita_grupo, f"% Receitas por {cat}"), f"% Receitas por {cat}")
+            adicionar_tabela_slide(prs, receita_grupo.to_frame("Valor"), f"Receitas por {cat}")
+    # Despesas
+    for cat in categorias_despesa:
+        if cat in despesas.columns:
+            despesa_grupo = despesas.groupby(cat)["Valor"].sum()
+            adicionar_figura_slide(prs, gerar_grafico_bar(despesa_grupo, f"Despesas por {cat}"), f"Despesas por {cat}")
+            adicionar_figura_slide(prs, gerar_grafico_pizza(despesa_grupo, f"% Despesas por {cat}"), f"% Despesas por {cat}")
+            adicionar_tabela_slide(prs, despesa_grupo.to_frame("Valor"), f"Despesas por {cat}")
+    # Comparativo
+    adicionar_figura_slide(prs, fig_comparativo, "Comparativo Receita x Despesa")
+    adicionar_tabela_slide(prs, comparativo, "Comparativo Receita x Despesa")
+    
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pptx")
+    prs.save(tmp_file.name)
+    st.success("PowerPoint gerado com sucesso")
+    st.markdown(f"[👉 Abrir PowerPoint]({tmp_file.name})", unsafe_allow_html=True)
