@@ -28,57 +28,60 @@ uploaded_despesas = st.file_uploader(
 )
 
 # ================= FUNÇÕES =================
-def extrair_periodo(nome_ficheiro):
-    return nome_ficheiro.replace(".xlsx", "").upper()
+def extrair_periodo(nome):
+    return nome.replace(".xlsx", "").upper()
 
 def ler_receitas(ficheiros):
     dfs = []
-    for file in ficheiros:
-        periodo = extrair_periodo(file.name)
-        df = pd.read_excel(file)
+    for f in ficheiros:
+        df = pd.read_excel(f)
         if df.empty:
             continue
 
-        df["Periodo"] = periodo
-        df["Nome do cliente"] = df["Nome do cliente"].astype(str).str.strip().str.upper()
-        coluna_status = df.columns[2]
-        df["Ativo"] = df[coluna_status].astype(str).str.upper().eq("ATIVO")
-        df["É Perda"] = df["Perdas"].notna() if "Perdas" in df.columns else False
+        df["Periodo"] = extrair_periodo(f.name)
+        df["Nome do cliente"] = df["Nome do cliente"].astype(str).str.upper().str.strip()
         df["Valor"] = pd.to_numeric(df["Valor"], errors="coerce").fillna(0)
         df["Modalidade"] = df.get("Modalidade", "N/A")
         df["Local"] = df.get("Local", "N/A")
         df["Tipo"] = df.get("Tipo", "N/A")
         df["Professor"] = df.get("Professor", "N/A")
+
+        coluna_status = df.columns[2]
+        df["Ativo"] = df[coluna_status].astype(str).str.upper().eq("ATIVO")
+        df["É Perda"] = df["Perdas"].notna() if "Perdas" in df.columns else False
+
         dfs.append(df)
-    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame(columns=["Periodo"])
 
 def ler_despesas(ficheiros):
     dfs = []
-    for file in ficheiros:
-        periodo = extrair_periodo(file.name)
-        df = pd.read_excel(file)
+    for f in ficheiros:
+        df = pd.read_excel(f)
         df = df.dropna(subset=["Valor", "Descrição da Despesa", "Classe"])
         if df.empty:
             continue
 
-        df["Periodo"] = periodo
+        df["Periodo"] = extrair_periodo(f.name)
         df["Valor"] = pd.to_numeric(df["Valor"], errors="coerce").fillna(0)
         df["Classe"] = df["Classe"].astype(str).str.upper().str.strip()
         df["Local"] = df["Local"].astype(str).str.strip()
+
         dfs.append(df)
-    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame(columns=["Periodo"])
 
 # ================= LEITURA =================
-receitas = ler_receitas(uploaded_receitas) if uploaded_receitas else pd.DataFrame()
-despesas = ler_despesas(uploaded_despesas) if uploaded_despesas else pd.DataFrame()
+receitas = ler_receitas(uploaded_receitas) if uploaded_receitas else pd.DataFrame(columns=["Periodo"])
+despesas = ler_despesas(uploaded_despesas) if uploaded_despesas else pd.DataFrame(columns=["Periodo"])
 
 # ================= FILTRO DEPÓSITOS =================
-if not despesas.empty:
+if not despesas.empty and "Classe" in despesas.columns:
     despesas = despesas[despesas["Classe"] != "DEPÓSITOS"]
 
 # ================= REDISTRIBUIÇÃO GERAL (POR PERÍODO) =================
 if not despesas.empty and not receitas.empty:
-    novas_despesas = []
+    novas = []
 
     for periodo in despesas["Periodo"].unique():
         desp_p = despesas[despesas["Periodo"] == periodo]
@@ -93,28 +96,32 @@ if not despesas.empty and not receitas.empty:
                     nova = row.copy()
                     nova["Valor"] = row["Valor"] * qtd / total_ativos
                     nova["Local"] = loc
-                    novas_despesas.append(nova)
+                    novas.append(nova)
             else:
-                novas_despesas.append(row)
+                novas.append(row)
 
-    despesas = pd.DataFrame(novas_despesas)
+    despesas = pd.DataFrame(novas)
 
-# ================= KPIs COMPARATIVOS =================
+# ================= KPIs =================
 st.subheader("📌 KPIs por Período")
 
-kpis = []
-for periodo in sorted(set(receitas["Periodo"]).union(set(despesas["Periodo"]))):
-    rec = receitas[receitas["Periodo"] == periodo]
-    desp = despesas[despesas["Periodo"] == periodo]
+periodos = sorted(
+    set(receitas["Periodo"].unique()).union(set(despesas["Periodo"].unique()))
+)
 
-    total_receita = rec["Valor"].sum()
-    total_despesa = desp["Valor"].sum()
-    lucro = total_receita + total_despesa
+kpis = []
+for p in periodos:
+    r = receitas[receitas["Periodo"] == p]
+    d = despesas[despesas["Periodo"] == p]
+
+    receita = r["Valor"].sum() if not r.empty else 0
+    despesa = d["Valor"].sum() if not d.empty else 0
+    lucro = receita + despesa
 
     kpis.append({
-        "Período": periodo,
-        "Receita (€)": round(total_receita, 2),
-        "Despesa (€)": round(total_despesa, 2),
+        "Período": p,
+        "Receita (€)": round(receita, 2),
+        "Despesa (€)": round(despesa, 2),
         "Lucro (€)": round(lucro, 2)
     })
 
@@ -123,8 +130,8 @@ st.dataframe(df_kpis, use_container_width=True)
 
 st.divider()
 
-# ================= FUNÇÕES DE GRÁFICO =================
-def grafico_bar_comparativo(df, titulo):
+# ================= FUNÇÃO GRÁFICO =================
+def grafico_bar(df, titulo):
     fig, ax = plt.subplots()
     df.plot(kind="bar", ax=ax)
     ax.set_title(titulo)
@@ -132,27 +139,10 @@ def grafico_bar_comparativo(df, titulo):
     ax.legend(title="Período")
     return fig
 
-def grafico_pizza_periodo(df, titulo):
-    figs = {}
-    for periodo in df.columns:
-        fig, ax = plt.subplots(figsize=(4,4))
-        valores = df[periodo].abs()
-        ax.pie(
-            valores,
-            labels=valores.index,
-            autopct="%1.1f%%",
-            pctdistance=1.15,
-            labeldistance=1.3,
-            textprops={"fontsize": 7}
-        )
-        ax.set_title(f"{titulo} – {periodo}")
-        figs[periodo] = fig
-    return figs
-
 # ================= RECEITAS =================
 st.subheader("📌 Receitas – Comparativo")
 for cat in ["Modalidade", "Tipo", "Professor", "Local"]:
-    if cat in receitas.columns:
+    if cat in receitas.columns and not receitas.empty:
         pivot = receitas.pivot_table(
             index=cat,
             columns="Periodo",
@@ -162,14 +152,12 @@ for cat in ["Modalidade", "Tipo", "Professor", "Local"]:
         )
         st.markdown(f"**Receitas por {cat}**")
         st.dataframe(pivot)
-        st.pyplot(grafico_bar_comparativo(pivot, f"Receitas por {cat}"))
-
-st.divider()
+        st.pyplot(grafico_bar(pivot, f"Receitas por {cat}"))
 
 # ================= DESPESAS =================
 st.subheader("📌 Despesas – Comparativo")
 for cat in ["Classe", "Local"]:
-    if cat in despesas.columns:
+    if cat in despesas.columns and not despesas.empty:
         pivot = despesas.pivot_table(
             index=cat,
             columns="Periodo",
@@ -179,10 +167,10 @@ for cat in ["Classe", "Local"]:
         )
         st.markdown(f"**Despesas por {cat}**")
         st.dataframe(pivot)
-        st.pyplot(grafico_bar_comparativo(pivot, f"Despesas por {cat}"))
+        st.pyplot(grafico_bar(pivot, f"Despesas por {cat}"))
 
-# ================= EXPORTAR PPT (LEVE) =================
-st.subheader("💾 Exportar PowerPoint Comparativo")
+# ================= EXPORTAR PPT =================
+st.subheader("💾 Exportar PowerPoint (leve)")
 
 def slide_fig(prs, fig, titulo):
     slide = prs.slides.add_slide(prs.slide_layouts[5])
@@ -192,15 +180,17 @@ def slide_fig(prs, fig, titulo):
     img.seek(0)
     slide.shapes.add_picture(img, Inches(1), Inches(1.5), width=Inches(8))
 
-if st.button("🖇️ Gerar PowerPoint Comparativo"):
+if st.button("🖇️ Gerar PowerPoint"):
     prs = Presentation()
-
-    slide_fig(prs, grafico_bar_comparativo(df_kpis.set_index("Período")[["Receita (€)", "Despesa (€)", "Lucro (€)"]],
-                                          "Receita x Despesa x Lucro"),
-              "Resumo Financeiro")
+    slide_fig(
+        prs,
+        grafico_bar(df_kpis.set_index("Período")[["Receita (€)", "Despesa (€)", "Lucro (€)"]],
+                    "Resumo Financeiro"),
+        "Resumo Financeiro"
+    )
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pptx")
     prs.save(tmp.name)
 
-    st.success("PowerPoint gerado com sucesso (leve e comparativo)")
+    st.success("PowerPoint gerado com sucesso")
     st.markdown(f"[👉 Abrir PowerPoint]({tmp.name})", unsafe_allow_html=True)
