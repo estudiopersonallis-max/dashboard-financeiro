@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Dashboard Financeiro", layout="wide")
 st.title("📊 Dashboard Financeiro")
@@ -83,41 +84,46 @@ col4.metric("🎟️ Ticket Médio", f"€ {ticket_medio:,.2f}")
 
 st.divider()
 
+# ================= FUNÇÃO PIZZA =================
+def grafico_pizza(series, titulo):
+    fig, ax = plt.subplots()
+    ax.pie(
+        series,
+        labels=series.index,
+        autopct="%1.1f%%",
+        startangle=90
+    )
+    ax.axis("equal")
+    ax.set_title(titulo)
+    st.pyplot(fig)
+
 # ================= MODALIDADE =================
 st.subheader("📌 Valor por Modalidade")
 valor_modalidade = df_filtro.groupby("Modalidade")["Valor"].sum()
 st.dataframe(valor_modalidade)
 st.bar_chart(valor_modalidade)
-
-st.subheader("📊 % do Valor por Modalidade")
-st.bar_chart((valor_modalidade / total_valor) * 100)
+grafico_pizza(valor_modalidade, "% do Valor por Modalidade")
 
 # ================= TIPO =================
 st.subheader("📌 Valor por Tipo")
 valor_tipo = df_filtro.groupby("Tipo")["Valor"].sum()
 st.dataframe(valor_tipo)
 st.bar_chart(valor_tipo)
-
-st.subheader("📊 % do Valor por Tipo")
-st.bar_chart((valor_tipo / total_valor) * 100)
+grafico_pizza(valor_tipo, "% do Valor por Tipo")
 
 # ================= PROFESSOR =================
 st.subheader("📌 Valor por Professor")
 valor_professor = df_filtro.groupby("Professor")["Valor"].sum()
 st.dataframe(valor_professor)
 st.bar_chart(valor_professor)
-
-st.subheader("📊 % do Valor por Professor")
-st.bar_chart((valor_professor / total_valor) * 100)
+grafico_pizza(valor_professor, "% do Valor por Professor")
 
 # ================= LOCAL =================
 st.subheader("📌 Valor por Local")
 valor_local = df_filtro.groupby("Local")["Valor"].sum()
 st.dataframe(valor_local)
 st.bar_chart(valor_local)
-
-st.subheader("📊 % do Valor por Local")
-st.bar_chart((valor_local / total_valor) * 100)
+grafico_pizza(valor_local, "% do Valor por Local")
 
 st.divider()
 
@@ -132,9 +138,7 @@ valor_periodo = pd.Series({
 
 st.dataframe(valor_periodo)
 st.bar_chart(valor_periodo)
-
-st.subheader("📊 % do Valor por Período do Mês")
-st.bar_chart((valor_periodo / total_valor) * 100)
+grafico_pizza(valor_periodo, "% do Valor por Período do Mês")
 
 st.divider()
 
@@ -143,17 +147,13 @@ st.subheader("👥 Clientes por Local")
 clientes_local = df_filtro[df_filtro["Ativo"]].groupby("Local")["Nome do cliente"].nunique()
 st.dataframe(clientes_local)
 st.bar_chart(clientes_local)
-
-st.subheader("📊 % Clientes por Local")
-st.bar_chart((clientes_local / clientes_ativos) * 100)
+grafico_pizza(clientes_local, "% Clientes por Local")
 
 st.subheader("👥 Clientes por Professor")
 clientes_professor = df_filtro[df_filtro["Ativo"]].groupby("Professor")["Nome do cliente"].nunique()
 st.dataframe(clientes_professor)
 st.bar_chart(clientes_professor)
-
-st.subheader("📊 % Clientes por Professor")
-st.bar_chart((clientes_professor / clientes_ativos) * 100)
+grafico_pizza(clientes_professor, "% Clientes por Professor")
 
 st.divider()
 
