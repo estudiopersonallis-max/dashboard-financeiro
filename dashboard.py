@@ -28,15 +28,13 @@ uploaded_despesas = st.file_uploader(
     key="despesas"
 )
 
-if not uploaded_receitas and not uploaded_despesas:
-    st.info("⬆️ Carregue pelo menos um ficheiro de receitas ou despesas para iniciar o dashboard")
-    st.stop()
-
 # ================= FUNÇÕES DE LEITURA =================
 def ler_receitas(ficheiros):
     dfs = []
     for file in ficheiros:
         df_temp = pd.read_excel(file)
+        if df_temp.empty:
+            continue
         mes_ficheiro = file.name.replace(".xlsx", "")
         df_temp["Mes"] = mes_ficheiro
         df_temp["Data"] = pd.to_datetime(df_temp["Data"])
@@ -54,6 +52,8 @@ def ler_despesas(ficheiros):
     dfs = []
     for file in ficheiros:
         df_temp = pd.read_excel(file)
+        if df_temp.empty:
+            continue
         mes_ficheiro = file.name.replace(".xlsx", "")
         df_temp["Mes"] = mes_ficheiro
         
@@ -74,8 +74,8 @@ def ler_despesas(ficheiros):
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
 # ================= LEITURA =================
-receitas = ler_receitas(uploaded_receitas)
-despesas = ler_despesas(uploaded_despesas)
+receitas = ler_receitas(uploaded_receitas) if uploaded_receitas else pd.DataFrame()
+despesas = ler_despesas(uploaded_despesas) if uploaded_despesas else pd.DataFrame()
 
 # ================= FILTRO =================
 tipo_periodo = st.selectbox(
@@ -83,27 +83,36 @@ tipo_periodo = st.selectbox(
     ["Mês (ficheiro)", "Trimestre", "Ano"]
 )
 
+# Função para criar lista de períodos disponível sem KeyError
+def obter_periodos(df_receitas, df_despesas, coluna):
+    vals_receitas = df_receitas[coluna].unique() if not df_receitas.empty else []
+    vals_despesas = df_despesas[coluna].unique() if not df_despesas.empty else []
+    return sorted(set(vals_receitas).union(set(vals_despesas)))
+
 if tipo_periodo == "Mês (ficheiro)":
-    periodo = st.selectbox("Selecione o mês", sorted(pd.concat([receitas["Mes"], despesas["Mes"]]).unique()))
-    receitas_filtro = receitas[receitas["Mes"] == periodo]
-    despesas_filtro = despesas[despesas["Mes"] == periodo]
+    periodos_disponiveis = obter_periodos(receitas, despesas, "Mes")
+    periodo = st.selectbox("Selecione o mês", periodos_disponiveis)
+    receitas_filtro = receitas[receitas["Mes"] == periodo] if not receitas.empty else pd.DataFrame()
+    despesas_filtro = despesas[despesas["Mes"] == periodo] if not despesas.empty else pd.DataFrame()
 elif tipo_periodo == "Trimestre":
-    periodo = st.selectbox("Selecione o trimestre", sorted(pd.concat([receitas["Trimestre"], despesas["Trimestre"]]).unique()))
-    receitas_filtro = receitas[receitas["Trimestre"] == periodo]
-    despesas_filtro = despesas[despesas["Trimestre"] == periodo]
+    periodos_disponiveis = obter_periodos(receitas, despesas, "Trimestre")
+    periodo = st.selectbox("Selecione o trimestre", periodos_disponiveis)
+    receitas_filtro = receitas[receitas["Trimestre"] == periodo] if not receitas.empty else pd.DataFrame()
+    despesas_filtro = despesas[despesas["Trimestre"] == periodo] if not despesas.empty else pd.DataFrame()
 else:
-    periodo = st.selectbox("Selecione o ano", sorted(pd.concat([receitas["Ano"], despesas["Ano"]]).unique()))
-    receitas_filtro = receitas[receitas["Ano"] == periodo]
-    despesas_filtro = despesas[despesas["Ano"] == periodo]
+    periodos_disponiveis = obter_periodos(receitas, despesas, "Ano")
+    periodo = st.selectbox("Selecione o ano", periodos_disponiveis)
+    receitas_filtro = receitas[receitas["Ano"] == periodo] if not receitas.empty else pd.DataFrame()
+    despesas_filtro = despesas[despesas["Ano"] == periodo] if not despesas.empty else pd.DataFrame()
 
 st.caption(f"📌 Período selecionado: **{periodo}**")
 
 # ================= KPIs =================
-clientes_ativos = receitas_filtro.loc[receitas_filtro["Ativo"], "Nome do cliente"].nunique()
-total_receita = receitas_filtro["Valor"].sum()
-perdas = int(receitas_filtro["É Perda"].sum())
+clientes_ativos = receitas_filtro.loc[receitas_filtro["Ativo"], "Nome do cliente"].nunique() if not receitas_filtro.empty else 0
+total_receita = receitas_filtro["Valor"].sum() if not receitas_filtro.empty else 0
+perdas = int(receitas_filtro["É Perda"].sum()) if not receitas_filtro.empty else 0
 ticket_medio = total_receita / clientes_ativos if clientes_ativos > 0 else 0
-total_despesa = despesas_filtro["Valor"].sum()
+total_despesa = despesas_filtro["Valor"].sum() if not despesas_filtro.empty else 0
 lucro_liquido = total_receita - total_despesa
 
 col1, col2, col3, col4, col5 = st.columns(5)
@@ -169,8 +178,8 @@ for cat in categorias:
 
 # ================= COMPARATIVO =================
 st.subheader("📌 Comparativo Receita x Despesa por Modalidade")
-receita_modalidade = receitas_filtro.groupby("Modalidade")["Valor"].sum()
-despesa_modalidade = despesas_filtro.groupby("Modalidade")["Valor"].sum()
+receita_modalidade = receitas_filtro.groupby("Modalidade")["Valor"].sum() if not receitas_filtro.empty else pd.Series()
+despesa_modalidade = despesas_filtro.groupby("Modalidade")["Valor"].sum() if not despesas_filtro.empty else pd.Series()
 comparativo = pd.concat([receita_modalidade, despesa_modalidade], axis=1).fillna(0)
 comparativo.columns = ["Receita", "Despesa"]
 st.dataframe(comparativo)
