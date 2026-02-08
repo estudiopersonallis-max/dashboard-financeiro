@@ -101,7 +101,6 @@ st.divider()
 
 # ================= FUNÇÕES DE GRÁFICO =================
 def gerar_grafico_bar(df_grupo, titulo):
-    df_grupo = df_grupo[df_grupo > 0]
     if df_grupo.empty:
         return None
     fig, ax = plt.subplots()
@@ -113,45 +112,42 @@ def gerar_grafico_bar(df_grupo, titulo):
     return fig
 
 def gerar_grafico_pizza(df_grupo, titulo):
-    df_grupo = df_grupo[df_grupo > 0]
     if df_grupo.empty:
         return None
+    # valores absolutos para pizza
+    df_grupo_abs = df_grupo.abs()
     fig, ax = plt.subplots(figsize=(5,5))
-    ax.pie(df_grupo, startangle=90, autopct="%1.1f%%", textprops={"fontsize": 8})
+    ax.pie(df_grupo_abs, startangle=90, autopct="%1.1f%%", textprops={"fontsize": 8})
     ax.legend(df_grupo.index, title="Legenda", loc="center left", bbox_to_anchor=(1,0.5), fontsize=8)
     ax.set_title(titulo)
     ax.axis("equal")
     return fig
 
 # ================= DASHBOARD =================
-st.subheader("📌 Receitas x Despesas")
-
-# Categorias
+st.subheader("📌 Receitas")
 categorias_receita = ["Modalidade", "Tipo", "Professor", "Local"]
-categorias_despesa = ["Classe", "Local"]
-
-# Gráficos lado a lado
 for cat in categorias_receita:
-    col_receita, col_despesa = st.columns(2)
-    with col_receita:
+    if cat in receitas.columns:
+        receita_grupo = receitas.groupby(cat)["Valor"].sum()
         st.markdown(f"**Receitas – {cat}**")
-        if cat in receitas.columns:
-            receita_grupo = receitas.groupby(cat)["Valor"].sum()
-            st.dataframe(receita_grupo)
-            fig_bar = gerar_grafico_bar(receita_grupo, f"Receitas por {cat}")
-            fig_pizza = gerar_grafico_pizza(receita_grupo, f"% Receitas por {cat}")
-            if fig_bar: st.pyplot(fig_bar)
-            if fig_pizza: st.pyplot(fig_pizza)
-    with col_despesa:
-        desp_cat = "Classe" if cat=="Modalidade" else cat
-        if desp_cat in despesas.columns:
-            st.markdown(f"**Despesas – {desp_cat}**")
-            despesa_grupo = despesas.groupby(desp_cat)["Valor"].sum()
-            st.dataframe(despesa_grupo)
-            fig_bar = gerar_grafico_bar(despesa_grupo, f"Despesas por {desp_cat}")
-            fig_pizza = gerar_grafico_pizza(despesa_grupo, f"% Despesas por {desp_cat}")
-            if fig_bar: st.pyplot(fig_bar)
-            if fig_pizza: st.pyplot(fig_pizza)
+        st.dataframe(receita_grupo)
+        fig_bar = gerar_grafico_bar(receita_grupo, f"Receitas por {cat}")
+        fig_pizza = gerar_grafico_pizza(receita_grupo, f"% Receitas por {cat}")
+        if fig_bar: st.pyplot(fig_bar)
+        if fig_pizza: st.pyplot(fig_pizza)
+
+st.divider()
+st.subheader("📌 Despesas")
+categorias_despesa = ["Classe", "Local"]
+for cat in categorias_despesa:
+    if cat in despesas.columns:
+        despesa_grupo = despesas.groupby(cat)["Valor"].sum()
+        st.markdown(f"**Despesas – {cat}**")
+        st.dataframe(despesa_grupo)
+        fig_bar = gerar_grafico_bar(despesa_grupo, f"Despesas por {cat}")
+        fig_pizza = gerar_grafico_pizza(despesa_grupo, f"% Despesas por {cat}")
+        if fig_bar: st.pyplot(fig_bar)
+        if fig_pizza: st.pyplot(fig_pizza)
 
 # ================= COMPARATIVO =================
 st.subheader("📌 Comparativo Receita x Despesa por Classe/Modalidade")
@@ -159,9 +155,7 @@ receita_modalidade = receitas.groupby("Modalidade")["Valor"].sum() if not receit
 despesa_classe = despesas.groupby("Classe")["Valor"].sum() if not despesas.empty else pd.Series(dtype=float)
 comparativo = pd.concat([receita_modalidade, despesa_classe], axis=1).fillna(0)
 comparativo.columns = ["Receita", "Despesa"]
-comparativo = comparativo.astype(float)
 st.dataframe(comparativo)
-
 if not comparativo.empty:
     fig_comparativo, ax = plt.subplots()
     comparativo.plot(kind="bar", ax=ax)
@@ -171,7 +165,6 @@ if not comparativo.empty:
 
 # ================= EXPORTAR POWERPOINT =================
 st.subheader("💾 Exportar para PowerPoint")
-
 def adicionar_figura_slide(prs, fig, titulo):
     if fig is None:
         return
