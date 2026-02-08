@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import tempfile
-import webbrowser
 from pathlib import Path
 
 st.set_page_config(page_title="Dashboard Financeiro", layout="wide")
@@ -80,14 +79,10 @@ col4.metric("🎟️ Ticket Médio", f"€ {ticket_medio:,.2f}")
 
 st.divider()
 
-# ================= FUNÇÃO PIZZA LIMPA =================
-def grafico_pizza_limpo(series, titulo):
+# ================= FUNÇÃO PIZZA =================
+def grafico_pizza(series, titulo):
     fig, ax = plt.subplots(figsize=(5, 5))
-    ax.pie(
-        series,
-        startangle=90,
-        textprops={"fontsize": 8}
-    )
+    ax.pie(series, startangle=90)
     ax.legend(
         series.index,
         title="Legenda",
@@ -99,24 +94,81 @@ def grafico_pizza_limpo(series, titulo):
     ax.axis("equal")
     st.pyplot(fig)
 
-# ================= DADOS =================
+# ================= MODALIDADE =================
+st.subheader("📌 Valor por Modalidade")
 valor_modalidade = df_filtro.groupby("Modalidade")["Valor"].sum()
+st.dataframe(valor_modalidade)
+st.bar_chart(valor_modalidade)
+grafico_pizza(valor_modalidade, "% Valor por Modalidade")
+
+# ================= TIPO =================
+st.subheader("📌 Valor por Tipo")
 valor_tipo = df_filtro.groupby("Tipo")["Valor"].sum()
+st.dataframe(valor_tipo)
+st.bar_chart(valor_tipo)
+grafico_pizza(valor_tipo, "% Valor por Tipo")
+
+# ================= PROFESSOR =================
+st.subheader("📌 Valor por Professor")
 valor_professor = df_filtro.groupby("Professor")["Valor"].sum()
+st.dataframe(valor_professor)
+st.bar_chart(valor_professor)
+grafico_pizza(valor_professor, "% Valor por Professor")
+
+# ================= LOCAL =================
+st.subheader("📌 Valor por Local")
 valor_local = df_filtro.groupby("Local")["Valor"].sum()
+st.dataframe(valor_local)
+st.bar_chart(valor_local)
+grafico_pizza(valor_local, "% Valor por Local")
 
+st.divider()
+
+# ================= PERÍODO DO MÊS =================
+st.subheader("📅 Valor por Período do Mês")
+
+valor_periodo = pd.Series({
+    "Dias 1–10": df_filtro[df_filtro["Dia"] <= 10]["Valor"].sum(),
+    "Dias 11–20": df_filtro[(df_filtro["Dia"] > 10) & (df_filtro["Dia"] <= 20)]["Valor"].sum(),
+    "Dias 21–fim": df_filtro[df_filtro["Dia"] > 20]["Valor"].sum()
+})
+
+st.dataframe(valor_periodo)
+st.bar_chart(valor_periodo)
+grafico_pizza(valor_periodo, "% Valor por Período do Mês")
+
+st.divider()
+
+# ================= CLIENTES =================
+st.subheader("👥 Clientes por Local")
 clientes_local = df_filtro[df_filtro["Ativo"]].groupby("Local")["Nome do cliente"].nunique()
+st.dataframe(clientes_local)
+st.bar_chart(clientes_local)
+grafico_pizza(clientes_local, "% Clientes por Local")
+
+st.subheader("👥 Clientes por Professor")
 clientes_professor = df_filtro[df_filtro["Ativo"]].groupby("Professor")["Nome do cliente"].nunique()
+st.dataframe(clientes_professor)
+st.bar_chart(clientes_professor)
+grafico_pizza(clientes_professor, "% Clientes por Professor")
 
-# ================= GRÁFICOS =================
-st.header("📊 Gráficos Percentuais")
+st.divider()
 
-grafico_pizza_limpo(valor_modalidade, "% Valor por Modalidade")
-grafico_pizza_limpo(valor_tipo, "% Valor por Tipo")
-grafico_pizza_limpo(valor_professor, "% Valor por Professor")
-grafico_pizza_limpo(valor_local, "% Valor por Local")
-grafico_pizza_limpo(clientes_local, "% Clientes por Local")
-grafico_pizza_limpo(clientes_professor, "% Clientes por Professor")
+# ================= TICKET =================
+st.subheader("🎟️ Ticket Médio por Tipo")
+ticket_tipo = (
+    df_filtro.groupby("Tipo")["Valor"].sum()
+    / df_filtro[df_filtro["Ativo"]].groupby("Tipo")["Nome do cliente"].nunique()
+)
+st.dataframe(ticket_tipo)
+st.bar_chart(ticket_tipo)
+
+st.divider()
+
+# ================= COMPARATIVO GLOBAL =================
+st.header("📈 Comparativo Global")
+valor_por_mes = df.groupby("Mes")["Valor"].sum()
+st.line_chart(valor_por_mes)
 
 # ================= RELATÓRIO HTML =================
 st.divider()
@@ -129,10 +181,9 @@ if st.button("🧾 Gerar relatório em HTML"):
         <title>Relatório Financeiro - {periodo}</title>
         <style>
             body {{ font-family: Arial; margin: 40px; }}
-            h1 {{ color: #333; }}
-            table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; }}
-            th, td {{ border: 1px solid #ccc; padding: 8px; text-align: left; }}
-            th {{ background-color: #f2f2f2; }}
+            table {{ border-collapse: collapse; width: 100%; }}
+            th, td {{ border: 1px solid #ccc; padding: 8px; }}
+            th {{ background: #f2f2f2; }}
         </style>
     </head>
     <body>
@@ -150,5 +201,5 @@ if st.button("🧾 Gerar relatório em HTML"):
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".html")
     Path(tmp.name).write_text(html, encoding="utf-8")
 
-    st.success("Relatório HTML gerado!")
+    st.success("Relatório HTML gerado com sucesso")
     st.markdown(f"[👉 Abrir relatório]({tmp.name})", unsafe_allow_html=True)
