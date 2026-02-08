@@ -2,24 +2,28 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="Dashboard Financeiro Comparativo", layout="wide")
+st.set_page_config(
+    page_title="Dashboard Financeiro Comparativo",
+    layout="wide"
+)
+
 st.title("📊 Dashboard Financeiro – Comparação por Período")
 
 # ======================================================
-# UPLOAD
+# UPLOAD DE FICHEIROS
 # ======================================================
 col1, col2 = st.columns(2)
 
 with col1:
     uploaded_receitas = st.file_uploader(
-        "📤 Ficheiros de RECEITAS (um ficheiro = um período)",
+        "📤 RECEITAS (1 ficheiro = 1 período)",
         type=["xlsx"],
         accept_multiple_files=True
     )
 
 with col2:
     uploaded_despesas = st.file_uploader(
-        "📤 Ficheiros de DESPESAS (um ficheiro = um período)",
+        "📤 DESPESAS (1 ficheiro = 1 período)",
         type=["xlsx"],
         accept_multiple_files=True
     )
@@ -34,9 +38,9 @@ if not uploaded_receitas and not uploaded_despesas:
 def nome_periodo(file):
     return file.name.replace(".xlsx", "").upper()
 
-def grafico_barra(df_pivot, titulo, prefixo="€ "):
+def grafico_barra(df, titulo, prefixo="€ "):
     fig, ax = plt.subplots()
-    df_pivot.plot(kind="bar", ax=ax)
+    df.plot(kind="bar", ax=ax)
     ax.set_title(titulo)
     ax.set_ylabel("Valor")
     ax.tick_params(axis="x", rotation=45)
@@ -55,7 +59,7 @@ def grafico_pizza(serie, titulo):
     n = len(serie)
     fontsize = 10 if n <= 5 else 8 if n <= 10 else 6
 
-    fig, ax = plt.subplots(figsize=(5,5))
+    fig, ax = plt.subplots(figsize=(5, 5))
     ax.pie(
         serie,
         autopct="%1.1f%%",
@@ -74,9 +78,9 @@ def grafico_pizza(serie, titulo):
     return fig
 
 # ======================================================
-# LEITURA RECEITAS
+# LEITURA DE RECEITAS
 # ======================================================
-receitas = []
+receitas_lista = []
 
 for file in uploaded_receitas or []:
     df = pd.read_excel(file)
@@ -85,15 +89,15 @@ for file in uploaded_receitas or []:
     df["Nome do cliente"] = df["Nome do cliente"].astype(str).str.upper().str.strip()
     df["Local"] = df["Local"].astype(str).str.upper().str.strip()
     df["Modalidade"] = df["Modalidade"].astype(str).str.upper().str.strip()
-    df["Ativo"] = df.iloc[:,2].astype(str).str.upper().eq("ATIVO")
-    receitas.append(df)
+    df["Ativo"] = df.iloc[:, 2].astype(str).str.upper().eq("ATIVO")
+    receitas_lista.append(df)
 
-receitas = pd.concat(receitas, ignore_index=True) if receitas else pd.DataFrame()
+receitas = pd.concat(receitas_lista, ignore_index=True) if receitas_lista else pd.DataFrame()
 
 # ======================================================
-# LEITURA DESPESAS
+# LEITURA DE DESPESAS
 # ======================================================
-despesas = []
+despesas_lista = []
 
 for file in uploaded_despesas or []:
     df = pd.read_excel(file)
@@ -101,49 +105,66 @@ for file in uploaded_despesas or []:
     df["Valor"] = df["Valor"].abs().astype(float)
     df["Classe"] = df["Classe"].astype(str).str.upper().str.strip()
     df["Local"] = df["Local"].astype(str).str.upper().str.strip()
-    despesas.append(df)
+    despesas_lista.append(df)
 
-despesas = pd.concat(despesas, ignore_index=True) if despesas else pd.DataFrame()
+despesas = pd.concat(despesas_lista, ignore_index=True) if despesas_lista else pd.DataFrame()
 
 # ======================================================
-# LIMPEZA DESPESAS
+# LIMPEZA DE DESPESAS
 # ======================================================
 if not despesas.empty:
-    despesas = despesas[despesas["Classe"] != "DEPÓSITOS"]
     despesas = despesas.dropna(subset=["Classe", "Local", "Valor"])
+    despesas = despesas[despesas["Classe"] != "DEPÓSITOS"]
 
 # ======================================================
-# REDISTRIBUIR DESPESAS GERAIS
+# REDISTRIBUIÇÃO DE DESPESAS "GERAL"
 # ======================================================
 if not despesas.empty and not receitas.empty:
-    ativos_local = receitas[receitas["Ativo"]].groupby("Local")["Nome do cliente"].nunique()
-    total_ativos = ativos_local.sum()
+    ativos_por_local = (
+        receitas[receitas["Ativo"]]
+        .groupby("Local")["Nome do cliente"]
+        .nunique()
+    )
 
-    novas = []
+    total_ativos = ativos_por_local.sum()
+    novas_linhas = []
+
     mask_geral = despesas["Local"] == "GERAL"
 
     for _, row in despesas[mask_geral].iterrows():
-        for local, n in ativos_local.items():
+        for local, qtd in ativos_por_local.items():
             nova = row.copy()
             nova["Local"] = local
-            nova["Valor"] = row["Valor"] * n / total_ativos
-            novas.append(nova)
+            nova["Valor"] = row["Valor"] * qtd / total_ativos
+            novas_linhas.append(nova)
 
-    despesas = pd.concat([despesas[~mask_geral], pd.DataFrame(novas)], ignore_index=True)
+    despesas = pd.concat(
+        [despesas[~mask_geral], pd.DataFrame(novas_linhas)],
+        ignore_index=True
+    )
 
 # ======================================================
-# KPIs COMPARATIVOS
+# KPIs COMPARATIVOS (ROBUSTO)
 # ======================================================
 st.subheader("📌 KPIs por Período")
 
+periodos = set()
+
+if not receitas.empty and "Periodo" in receitas.columns:
+    periodos |= set(receitas["Periodo"])
+
+if not despesas.empty and "Periodo" in despesas.columns:
+    periodos |= set(despesas["Periodo"])
+
 kpis = []
 
-for periodo in sorted(set(receitas["Periodo"]).union(set(despesas["Periodo"]))):
-    r = receitas[receitas["Periodo"] == periodo]
-    d = despesas[despesas["Periodo"] == periodo]
+for periodo in sorted(periodos):
+    r = receitas[receitas["Periodo"] == periodo] if not receitas.empty else pd.DataFrame()
+    d = despesas[despesas["Periodo"] == periodo] if not despesas.empty else pd.DataFrame()
 
-    total_r = r["Valor"].sum()
-    total_d = d["Valor"].sum()
+    total_r = r["Valor"].sum() if not r.empty else 0
+    total_d = d["Valor"].sum() if not d.empty else 0
+
     lucro = total_r - total_d
 
     kpis.append({
@@ -161,13 +182,18 @@ st.dataframe(df_kpi)
 # ======================================================
 if not receitas.empty:
     st.divider()
-    st.header("💰 Receitas – Comparativo")
+    st.header("💰 Receitas – Comparação")
 
     col1, col2 = st.columns(2)
 
     with col1:
         st.subheader("Receita por Modalidade")
-        pivot = receitas.pivot_table(values="Valor", index="Modalidade", columns="Periodo", aggfunc="sum").fillna(0)
+        pivot = receitas.pivot_table(
+            values="Valor",
+            index="Modalidade",
+            columns="Periodo",
+            aggfunc="sum"
+        ).fillna(0)
         st.dataframe(pivot)
         st.pyplot(grafico_barra(pivot, "Receita por Modalidade"))
 
@@ -182,13 +208,18 @@ if not receitas.empty:
 # ======================================================
 if not despesas.empty:
     st.divider()
-    st.header("💸 Despesas – Comparativo")
+    st.header("💸 Despesas – Comparação")
 
     col1, col2 = st.columns(2)
 
     with col1:
         st.subheader("Despesa por Classe")
-        pivot = despesas.pivot_table(values="Valor", index="Classe", columns="Periodo", aggfunc="sum").fillna(0)
+        pivot = despesas.pivot_table(
+            values="Valor",
+            index="Classe",
+            columns="Periodo",
+            aggfunc="sum"
+        ).fillna(0)
         st.dataframe(pivot)
         st.pyplot(grafico_barra(pivot, "Despesa por Classe"))
 
@@ -204,7 +235,12 @@ if not despesas.empty:
 
     with col3:
         st.subheader("Despesa por Local")
-        pivot = despesas.pivot_table(values="Valor", index="Local", columns="Periodo", aggfunc="sum").fillna(0)
+        pivot = despesas.pivot_table(
+            values="Valor",
+            index="Local",
+            columns="Periodo",
+            aggfunc="sum"
+        ).fillna(0)
         st.dataframe(pivot)
         st.pyplot(grafico_barra(pivot, "Despesa por Local"))
 
