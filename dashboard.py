@@ -42,6 +42,8 @@ def ler_receitas(ficheiros):
         df_temp["Valor"] = df_temp["Valor"].astype(float)
         df_temp["Modalidade"] = df_temp["Modalidade"] if "Modalidade" in df_temp.columns else "N/A"
         df_temp["Local"] = df_temp["Local"] if "Local" in df_temp.columns else "N/A"
+        df_temp["Tipo"] = df_temp["Tipo"] if "Tipo" in df_temp.columns else "N/A"
+        df_temp["Professor"] = df_temp["Professor"] if "Professor" in df_temp.columns else "N/A"
         dfs.append(df_temp)
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
@@ -78,7 +80,7 @@ if not despesas.empty and not receitas.empty:
     despesas_geral = despesas[geral_mask]
     despesas_nao_geral = despesas[~geral_mask]
 
-    # Redistribuir
+    # Redistribuir proporcionalmente
     redistribuidas = []
     for idx, row in despesas_geral.iterrows():
         total_ativos = ativos_local.sum()
@@ -154,7 +156,7 @@ for cat in categorias_receita:
             if fig_receita_bar: st.pyplot(fig_receita_bar)
             if fig_receita_pizza: st.pyplot(fig_receita_pizza)
     with col_despesa:
-        if cat in categorias_despesa:
+        if cat in categorias_despesa and cat in despesas.columns:
             st.markdown(f"**Despesas – {cat}**")
             despesa_grupo = despesas.groupby(cat)["Valor"].sum()
             st.dataframe(despesa_grupo)
@@ -206,7 +208,7 @@ if st.button("🖇️ Gerar PowerPoint Automático"):
     for cat in categorias_receita:
         if cat in receitas.columns:
             receita_grupo = receitas.groupby(cat)["Valor"].sum()
-            if cat in categorias_despesa:
+            if cat in categorias_despesa and cat in despesas.columns:
                 despesa_grupo = despesas.groupby(cat)["Valor"].sum()
             else:
                 despesa_grupo = None
