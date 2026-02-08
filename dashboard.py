@@ -8,7 +8,7 @@ from pptx import Presentation
 from pptx.util import Inches
 import matplotlib
 
-matplotlib.use("Agg")  # Necessário para exportar gráficos
+matplotlib.use("Agg")  # Para exportar gráficos
 
 st.set_page_config(page_title="Dashboard Financeiro", layout="wide")
 st.title("📊 Dashboard Financeiro")
@@ -63,7 +63,7 @@ def ler_despesas(ficheiros):
         df_temp["Modalidade"] = df_temp["Classe"].astype(str).str.strip().str.upper()
         df_temp["Local"] = df_temp["Local"].astype(str).str.strip()
         
-        # Colunas ausentes preenchidas para compatibilidade com receitas
+        # Preencher colunas para compatibilidade com receitas
         for col in ["Tipo", "Professor", "Data", "Dia", "Ano", "Trimestre"]:
             if col not in df_temp.columns:
                 df_temp[col] = "N/A"
@@ -74,11 +74,8 @@ def ler_despesas(ficheiros):
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
 # ================= LEITURA =================
-df_receitas = ler_receitas(uploaded_receitas)
-df_despesas = ler_despesas(uploaded_despesas)
-
-df = pd.concat([df_receitas, df_despesas], ignore_index=True)
-df["Tipo Registro"] = ["Receita"]*len(df_receitas) + ["Despesa"]*len(df_despesas)
+receitas = ler_receitas(uploaded_receitas)
+despesas = ler_despesas(uploaded_despesas)
 
 # ================= FILTRO =================
 tipo_periodo = st.selectbox(
@@ -87,26 +84,26 @@ tipo_periodo = st.selectbox(
 )
 
 if tipo_periodo == "Mês (ficheiro)":
-    periodo = st.selectbox("Selecione o mês", sorted(df["Mes"].unique()))
-    df_filtro = df[df["Mes"] == periodo]
+    periodo = st.selectbox("Selecione o mês", sorted(pd.concat([receitas["Mes"], despesas["Mes"]]).unique()))
+    receitas_filtro = receitas[receitas["Mes"] == periodo]
+    despesas_filtro = despesas[despesas["Mes"] == periodo]
 elif tipo_periodo == "Trimestre":
-    periodo = st.selectbox("Selecione o trimestre", sorted(df["Trimestre"].unique()))
-    df_filtro = df[df["Trimestre"] == periodo]
+    periodo = st.selectbox("Selecione o trimestre", sorted(pd.concat([receitas["Trimestre"], despesas["Trimestre"]]).unique()))
+    receitas_filtro = receitas[receitas["Trimestre"] == periodo]
+    despesas_filtro = despesas[despesas["Trimestre"] == periodo]
 else:
-    periodo = st.selectbox("Selecione o ano", sorted(df["Ano"].unique()))
-    df_filtro = df[df["Ano"] == periodo]
+    periodo = st.selectbox("Selecione o ano", sorted(pd.concat([receitas["Ano"], despesas["Ano"]]).unique()))
+    receitas_filtro = receitas[receitas["Ano"] == periodo]
+    despesas_filtro = despesas[despesas["Ano"] == periodo]
 
 st.caption(f"📌 Período selecionado: **{periodo}**")
 
 # ================= KPIs =================
-receitas = df_filtro[df_filtro["Tipo Registro"]=="Receita"]
-despesas = df_filtro[df_filtro["Tipo Registro"]=="Despesa"]
-
-clientes_ativos = receitas.loc[receitas["Ativo"], "Nome do cliente"].nunique()
-total_receita = receitas["Valor"].sum()
-perdas = int(receitas["É Perda"].sum())
+clientes_ativos = receitas_filtro.loc[receitas_filtro["Ativo"], "Nome do cliente"].nunique()
+total_receita = receitas_filtro["Valor"].sum()
+perdas = int(receitas_filtro["É Perda"].sum())
 ticket_medio = total_receita / clientes_ativos if clientes_ativos > 0 else 0
-total_despesa = despesas["Valor"].sum()
+total_despesa = despesas_filtro["Valor"].sum()
 lucro_liquido = total_receita - total_despesa
 
 col1, col2, col3, col4, col5 = st.columns(5)
@@ -120,6 +117,7 @@ st.divider()
 
 # ================= FUNÇÕES DE GRÁFICOS =================
 def gerar_grafico_bar(df_grupo, titulo):
+    df_grupo = df_grupo.dropna()
     if df_grupo.empty:
         st.warning(f"⚠️ Nenhum dado disponível para '{titulo}'")
         return None
@@ -132,13 +130,11 @@ def gerar_grafico_bar(df_grupo, titulo):
     return fig
 
 def gerar_grafico_pizza(df_grupo, titulo):
-    # Filtra apenas valores positivos para evitar erro no pie
-    df_grupo = df_grupo[df_grupo > 0]
-    
+    df_grupo = df_grupo.dropna()
+    df_grupo = df_grupo[df_grupo > 0]  # filtra zeros
     if df_grupo.empty:
         st.warning(f"⚠️ Nenhum dado disponível para '{titulo}'")
         return None
-    
     fig, ax = plt.subplots(figsize=(5,5))
     ax.pie(df_grupo, startangle=90, autopct="%1.1f%%", textprops={"fontsize": 8})
     ax.legend(df_grupo.index, title="Legenda", loc="center left", bbox_to_anchor=(1,0.5), fontsize=8)
@@ -154,8 +150,8 @@ for cat in categorias:
     col_receita, col_despesa = st.columns(2)
     with col_receita:
         st.markdown(f"**Receitas – {cat}**")
-        if cat in receitas.columns:
-            receita_grupo = receitas.groupby(cat)["Valor"].sum()
+        if cat in receitas_filtro.columns:
+            receita_grupo = receitas_filtro.groupby(cat)["Valor"].sum()
             st.dataframe(receita_grupo)
             fig_receita_bar = gerar_grafico_bar(receita_grupo, f"Receitas por {cat}")
             fig_receita_pizza = gerar_grafico_pizza(receita_grupo, f"% Receitas por {cat}")
@@ -163,8 +159,8 @@ for cat in categorias:
             if fig_receita_pizza: st.pyplot(fig_receita_pizza)
     with col_despesa:
         st.markdown(f"**Despesas – {cat}**")
-        if cat in despesas.columns:
-            despesa_grupo = despesas.groupby(cat)["Valor"].sum()
+        if cat in despesas_filtro.columns:
+            despesa_grupo = despesas_filtro.groupby(cat)["Valor"].sum()
             st.dataframe(despesa_grupo)
             fig_despesa_bar = gerar_grafico_bar(despesa_grupo, f"Despesas por {cat}")
             fig_despesa_pizza = gerar_grafico_pizza(despesa_grupo, f"% Despesas por {cat}")
@@ -173,8 +169,8 @@ for cat in categorias:
 
 # ================= COMPARATIVO =================
 st.subheader("📌 Comparativo Receita x Despesa por Modalidade")
-receita_modalidade = receitas.groupby("Modalidade")["Valor"].sum()
-despesa_modalidade = despesas.groupby("Modalidade")["Valor"].sum()
+receita_modalidade = receitas_filtro.groupby("Modalidade")["Valor"].sum()
+despesa_modalidade = despesas_filtro.groupby("Modalidade")["Valor"].sum()
 comparativo = pd.concat([receita_modalidade, despesa_modalidade], axis=1).fillna(0)
 comparativo.columns = ["Receita", "Despesa"]
 st.dataframe(comparativo)
@@ -212,9 +208,9 @@ def adicionar_tabela_slide(prs, df, titulo):
 if st.button("🖇️ Gerar PowerPoint Automático"):
     prs = Presentation()
     for cat in categorias:
-        if cat in receitas.columns:
-            receita_grupo = receitas.groupby(cat)["Valor"].sum()
-            despesa_grupo = despesas.groupby(cat)["Valor"].sum()
+        if cat in receitas_filtro.columns:
+            receita_grupo = receitas_filtro.groupby(cat)["Valor"].sum()
+            despesa_grupo = despesas_filtro.groupby(cat)["Valor"].sum()
             adicionar_figura_slide(prs, gerar_grafico_bar(receita_grupo, f"Receitas por {cat}"), f"Receitas por {cat}")
             adicionar_figura_slide(prs, gerar_grafico_pizza(receita_grupo, f"% Receitas por {cat}"), f"% Receitas por {cat}")
             adicionar_figura_slide(prs, gerar_grafico_bar(despesa_grupo, f"Despesas por {cat}"), f"Despesas por {cat}")
