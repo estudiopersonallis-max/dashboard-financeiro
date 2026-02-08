@@ -88,7 +88,7 @@ total_receita = receitas["Valor"].sum() if not receitas.empty else 0
 perdas = int(receitas["É Perda"].sum()) if not receitas.empty else 0
 ticket_medio = total_receita / clientes_ativos if clientes_ativos else 0
 total_despesa = despesas["Valor"].sum() if not despesas.empty else 0
-lucro_liquido = total_receita + total_despesa  # despesas negativas, já subtraídas
+lucro_liquido = total_receita + total_despesa  # despesas negativas já subtraídas
 
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("💰 Total Receita", f"€ {total_receita:,.2f}")
@@ -144,7 +144,7 @@ for cat in categorias_receita:
             if fig_pizza: st.pyplot(fig_pizza)
     with col_despesa:
         desp_cat = "Classe" if cat=="Modalidade" else cat
-        if desp_cat in categorias_despesa and desp_cat in despesas.columns:
+        if desp_cat in despesas.columns:
             st.markdown(f"**Despesas – {desp_cat}**")
             despesa_grupo = despesas.groupby(desp_cat)["Valor"].sum()
             st.dataframe(despesa_grupo)
