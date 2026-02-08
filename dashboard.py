@@ -132,9 +132,13 @@ def gerar_grafico_bar(df_grupo, titulo):
     return fig
 
 def gerar_grafico_pizza(df_grupo, titulo):
-    if df_grupo.empty or df_grupo.sum() == 0:
+    # Filtra apenas valores positivos para evitar erro no pie
+    df_grupo = df_grupo[df_grupo > 0]
+    
+    if df_grupo.empty:
         st.warning(f"⚠️ Nenhum dado disponível para '{titulo}'")
         return None
+    
     fig, ax = plt.subplots(figsize=(5,5))
     ax.pie(df_grupo, startangle=90, autopct="%1.1f%%", textprops={"fontsize": 8})
     ax.legend(df_grupo.index, title="Legenda", loc="center left", bbox_to_anchor=(1,0.5), fontsize=8)
@@ -185,7 +189,7 @@ st.pyplot(fig_comparativo)
 st.subheader("💾 Exportar para PowerPoint")
 
 def adicionar_figura_slide(prs, fig, titulo):
-    if fig is None: 
+    if fig is None:
         return
     slide = prs.slides.add_slide(prs.slide_layouts[5])
     slide.shapes.title.text = titulo
