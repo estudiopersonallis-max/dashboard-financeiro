@@ -10,10 +10,10 @@ import matplotlib
 matplotlib.use("Agg")
 
 st.set_page_config(page_title="Dashboard Financeiro", layout="wide")
-st.title("📊 Dashboard Financeiro – Análise Executiva")
+st.title("📊 Dashboard Financeiro – Comparativo por Período")
 
 # ================= UPLOAD =================
-st.subheader("📤 Upload de Ficheiros (1 ficheiro = 1 período)")
+st.subheader("📤 Upload de Ficheiros (cada ficheiro = um período)")
 uploaded_receitas = st.file_uploader(
     "Receitas (Excel)",
     type=["xlsx"],
@@ -46,12 +46,17 @@ def ler_receitas(files):
 
         coluna_status = df.columns[2]
         df["Ativo"] = df[coluna_status].astype(str).str.upper().eq("ATIVO")
+        df["É Perda"] = df["Perdas"].notna() if "Perdas" in df.columns else False
 
         dfs.append(df)
 
-    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame(
-        columns=["Periodo","Valor","Nome do cliente","Modalidade","Tipo","Professor","Local","Ativo"]
-    )
+    if dfs:
+        return pd.concat(dfs, ignore_index=True)
+
+    return pd.DataFrame(columns=[
+        "Periodo","Valor","Nome do cliente","Modalidade",
+        "Tipo","Professor","Local","Ativo","É Perda"
+    ])
 
 def ler_despesas(files):
     dfs = []
@@ -68,78 +73,122 @@ def ler_despesas(files):
 
         dfs.append(df)
 
-    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame(
-        columns=["Periodo","Valor","Classe","Local"]
-    )
+    if dfs:
+        return pd.concat(dfs, ignore_index=True)
+
+    return pd.DataFrame(columns=["Periodo","Valor","Classe","Local"])
 
 # ================= LEITURA =================
 receitas = ler_receitas(uploaded_receitas) if uploaded_receitas else ler_receitas([])
 despesas = ler_despesas(uploaded_despesas) if uploaded_despesas else ler_despesas([])
 
 # ================= FILTRO DEPÓSITOS =================
-despesas = despesas[despesas["Classe"] != "DEPÓSITOS"]
-
-# ================= RESULTADO POR PERÍODO =================
-periodos = sorted(set(receitas["Periodo"]).union(set(despesas["Periodo"])))
-resumo = []
-
-for p in periodos:
-    r = receitas[receitas["Periodo"] == p]["Valor"].sum()
-    d = despesas[despesas["Periodo"] == p]["Valor"].sum()
-    lucro = r + d
-    margem = (lucro / r * 100) if r != 0 else 0
-
-    resumo.append({
-        "Período": p,
-        "Receita (€)": round(r, 2),
-        "Despesa (€)": round(d, 2),
-        "Lucro (€)": round(lucro, 2),
-        "Margem (%)": round(margem, 1)
-    })
-
-df_resumo = pd.DataFrame(resumo)
+if not despesas.empty:
+    despesas = despesas[despesas["Classe"] != "DEPÓSITOS"]
 
 # ================= KPIs =================
-st.subheader("📌 KPIs por Período")
-st.dataframe(df_resumo, use_container_width=True)
+st.subheader("📌 KPIs Comparativos")
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("📈 Melhor Mês", df_resumo.loc[df_resumo["Lucro (€)"].idxmax()]["Período"])
-col2.metric("📉 Pior Mês", df_resumo.loc[df_resumo["Lucro (€)"].idxmin()]["Período"])
-col3.metric("💰 Receita Média", f"€ {df_resumo['Receita (€)'].mean():,.2f}")
-col4.metric("🎯 Margem Média", f"{df_resumo['Margem (%)'].mean():.1f} %")
+periodos = sorted(set(receitas["Periodo"]).union(set(despesas["Periodo"])))
+kpis = []
 
+for p in periodos:
+    r = receitas[receitas["Periodo"] == p]
+    d = despesas[despesas["Periodo"] == p]
+
+    receita = r["Valor"].sum()
+    despesa = d["Valor"].sum()
+    lucro = receita + despesa  # despesas já negativas
+
+    kpis.append({
+        "Período": p,
+        "Receita (€)": round(receita, 2),
+        "Despesa (€)": round(despesa, 2),
+        "Lucro (€)": round(lucro, 2)
+    })
+
+df_kpis = pd.DataFrame(kpis)
+st.dataframe(df_kpis, use_container_width=True)
 st.divider()
 
-# ================= GRÁFICOS EXECUTIVOS =================
-st.subheader("📊 Análise Executiva")
-
-def grafico_linha(df, col, titulo):
+# ================= GRÁFICOS =================
+def grafico_bar(df, titulo):
+    if df.empty:
+        return None
     fig, ax = plt.subplots()
-    ax.plot(df["Período"], df[col], marker="o")
+    df.plot(kind="bar", ax=ax)
     ax.set_title(titulo)
-    ax.grid(True)
-    return fig
-
-def grafico_bar_duplo(df):
-    fig, ax = plt.subplots()
-    df.set_index("Período")[["Receita (€)", "Despesa (€)"]].plot(kind="bar", ax=ax)
-    ax.set_title("Receita vs Despesa por Período")
     ax.set_ylabel("€")
+    ax.legend(title="Período")
     return fig
 
-fig_lucro = grafico_linha(df_resumo, "Lucro (€)", "Evolução do Lucro")
-fig_margem = grafico_linha(df_resumo, "Margem (%)", "Evolução da Margem (%)")
-fig_receita_despesa = grafico_bar_duplo(df_resumo)
+def grafico_pizza(series, titulo):
+    if series.sum() == 0:
+        return None
 
-st.pyplot(fig_receita_despesa)
-st.pyplot(fig_lucro)
-st.pyplot(fig_margem)
+    valores = series.abs()
+    fig, ax = plt.subplots(figsize=(5, 5))
+    ax.pie(
+        valores,
+        autopct=lambda p: f"{p:.1f}%",
+        startangle=90,
+        pctdistance=1.15,
+        labeldistance=1.3,
+        textprops={"fontsize": 8}
+    )
+    ax.legend(
+        valores.index,
+        loc="center left",
+        bbox_to_anchor=(1, 0.5),
+        fontsize=8
+    )
+    ax.set_title(titulo)
+    ax.axis("equal")
+    return fig
+
+def bloco_analise(df, categoria, titulo_base):
+    if df.empty or categoria not in df.columns:
+        return
+
+    pivot = df.pivot_table(
+        index=categoria,
+        columns="Periodo",
+        values="Valor",
+        aggfunc="sum",
+        fill_value=0
+    )
+
+    percent = pivot.div(pivot.sum(axis=0), axis=1) * 100
+    tabela = pivot.round(2).astype(str) + " € | " + percent.round(1).astype(str) + " %"
+
+    st.markdown(f"### {titulo_base} por {categoria}")
+    st.dataframe(tabela, use_container_width=True)
+
+    fig_bar = grafico_bar(pivot, f"{titulo_base} por {categoria} (€)")
+    if fig_bar:
+        st.pyplot(fig_bar)
+
+    for p in pivot.columns:
+        fig = grafico_pizza(pivot[p], f"{titulo_base} – {categoria} (%) | {p}")
+        if fig:
+            st.pyplot(fig)
+
+# ================= RECEITAS =================
+st.subheader("📌 Receitas – Distribuição Percentual e Valor")
+for cat in ["Modalidade", "Tipo", "Professor", "Local"]:
+    bloco_analise(receitas, cat, "Receitas")
+
+# ================= DESPESAS =================
+st.subheader("📌 Despesas – Distribuição Percentual e Valor")
+for cat in ["Classe", "Local"]:
+    bloco_analise(despesas, cat, "Despesas")
 
 # ================= POWERPOINT =================
-st.subheader("💾 Exportar PowerPoint Executivo")
+st.subheader("💾 Exportar PowerPoint")
 
 def slide_fig(prs, fig, titulo):
+    if fig is None:
+        return
     slide = prs.slides.add_slide(prs.slide_layouts[5])
     slide.shapes.title.text = titulo
     img = BytesIO()
@@ -149,12 +198,16 @@ def slide_fig(prs, fig, titulo):
 
 if st.button("🖇️ Gerar PowerPoint"):
     prs = Presentation()
-    slide_fig(prs, fig_receita_despesa, "Receita vs Despesa")
-    slide_fig(prs, fig_lucro, "Evolução do Lucro")
-    slide_fig(prs, fig_margem, "Evolução da Margem")
+    slide_fig(
+        prs,
+        grafico_bar(
+            df_kpis.set_index("Período")[["Receita (€)", "Despesa (€)", "Lucro (€)"]],
+            "Resumo Financeiro"
+        ),
+        "Resumo Financeiro"
+    )
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pptx")
     prs.save(tmp.name)
-
-    st.success("PowerPoint executivo gerado com sucesso")
+    st.success("PowerPoint gerado com sucesso")
     st.markdown(f"[👉 Abrir PowerPoint]({tmp.name})", unsafe_allow_html=True)
