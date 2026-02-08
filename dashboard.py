@@ -66,6 +66,10 @@ def ler_despesas(ficheiros):
 receitas = ler_receitas(uploaded_receitas) if uploaded_receitas else pd.DataFrame()
 despesas = ler_despesas(uploaded_despesas) if uploaded_despesas else pd.DataFrame()
 
+# ================= FILTRO DEPÓSITOS =================
+if not despesas.empty:
+    despesas = despesas[despesas["Classe"].str.upper() != "DEPÓSITOS"]
+
 # ================= REDISTRIBUIÇÃO =================
 if not despesas.empty and not receitas.empty:
     ativos_local = receitas[receitas["Ativo"]].groupby("Local")["Nome do cliente"].nunique()
@@ -114,7 +118,6 @@ def gerar_grafico_bar(df_grupo, titulo):
 def gerar_grafico_pizza(df_grupo, titulo):
     if df_grupo.empty:
         return None
-    # valores absolutos para pizza
     df_grupo_abs = df_grupo.abs()
     fig, ax = plt.subplots(figsize=(5,5))
     ax.pie(df_grupo_abs, startangle=90, autopct="%1.1f%%", textprops={"fontsize": 8})
