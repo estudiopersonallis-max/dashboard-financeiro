@@ -79,117 +79,56 @@ col4.metric("🎟️ Ticket Médio", f"€ {ticket_medio:,.2f}")
 
 st.divider()
 
-# ================= FUNÇÕES DE GRÁFICO =================
-def bar_chart_com_valor(series, titulo, prefixo=""):
-    fig, ax = plt.subplots()
-    bars = ax.bar(series.index.astype(str), series.values)
-    ax.set_title(titulo)
-    ax.set_xticklabels(series.index.astype(str), rotation=45, ha="right")
-
-    for bar in bars:
-        altura = bar.get_height()
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            altura,
-            f"{prefixo}{altura:,.2f}" if prefixo else f"{int(altura)}",
-            ha="center",
-            va="bottom",
-            fontsize=8
-        )
-
-    st.pyplot(fig)
-
-
-def pizza_percentual(series, titulo):
-    fig, ax = plt.subplots(figsize=(5, 5))
-
-    ax.pie(
-        series,
-        startangle=90,
-        autopct="%1.1f%%",
-        textprops={"fontsize": 8}
-    )
-
-    ax.legend(
-        series.index,
-        title="Legenda",
-        loc="center left",
-        bbox_to_anchor=(1, 0.5),
-        fontsize=8
-    )
-
-    ax.set_title(titulo)
-    ax.axis("equal")
-    st.pyplot(fig)
-
-# ================= MODALIDADE =================
-st.subheader("📌 Valor por Modalidade")
+# ================= DADOS PARA RELATÓRIO =================
 valor_modalidade = df_filtro.groupby("Modalidade")["Valor"].sum()
-st.dataframe(valor_modalidade)
-bar_chart_com_valor(valor_modalidade, "Valor por Modalidade (€)", "€ ")
-pizza_percentual(valor_modalidade, "% Valor por Modalidade")
-
-# ================= TIPO =================
-st.subheader("📌 Valor por Tipo")
 valor_tipo = df_filtro.groupby("Tipo")["Valor"].sum()
-st.dataframe(valor_tipo)
-bar_chart_com_valor(valor_tipo, "Valor por Tipo (€)", "€ ")
-pizza_percentual(valor_tipo, "% Valor por Tipo")
-
-# ================= PROFESSOR =================
-st.subheader("📌 Valor por Professor")
 valor_professor = df_filtro.groupby("Professor")["Valor"].sum()
-st.dataframe(valor_professor)
-bar_chart_com_valor(valor_professor, "Valor por Professor (€)", "€ ")
-pizza_percentual(valor_professor, "% Valor por Professor")
-
-# ================= LOCAL =================
-st.subheader("📌 Valor por Local")
 valor_local = df_filtro.groupby("Local")["Valor"].sum()
-st.dataframe(valor_local)
-bar_chart_com_valor(valor_local, "Valor por Local (€)", "€ ")
-pizza_percentual(valor_local, "% Valor por Local")
 
-st.divider()
+# ================= RELATÓRIO PDF (HTML LEVE) =================
+st.header("📄 Relatório Mensal (PDF)")
 
-# ================= CLIENTES =================
-st.subheader("👥 Clientes por Local")
-clientes_local = df_filtro[df_filtro["Ativo"]].groupby("Local")["Nome do cliente"].nunique()
-st.dataframe(clientes_local)
-bar_chart_com_valor(clientes_local, "Clientes por Local")
-pizza_percentual(clientes_local, "% Clientes por Local")
+st.info("👉 Clique para gerar o relatório e depois use **Ctrl+P → Salvar como PDF**")
 
-st.subheader("👥 Clientes por Professor")
-clientes_professor = df_filtro[df_filtro["Ativo"]].groupby("Professor")["Nome do cliente"].nunique()
-st.dataframe(clientes_professor)
-bar_chart_com_valor(clientes_professor, "Clientes por Professor")
-pizza_percentual(clientes_professor, "% Clientes por Professor")
-
-st.divider()
-
-# ================= RELATÓRIO HTML =================
-st.header("📄 Relatório")
-
-if st.button("🧾 Gerar relatório em HTML"):
+if st.button("🧾 Gerar relatório em HTML (leve)"):
     html = f"""
     <html>
     <head>
+        <meta charset="utf-8">
         <title>Relatório Financeiro - {periodo}</title>
         <style>
-            body {{ font-family: Arial; margin: 40px; }}
-            table {{ border-collapse: collapse; width: 100%; }}
-            th, td {{ border: 1px solid #ccc; padding: 8px; }}
-            th {{ background: #f2f2f2; }}
+            body {{ font-family: Arial; margin: 30px; }}
+            h1, h2 {{ border-bottom: 1px solid #ccc; padding-bottom: 4px; }}
+            table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; }}
+            th, td {{ border: 1px solid #ccc; padding: 6px; text-align: left; }}
+            th {{ background-color: #f2f2f2; }}
         </style>
     </head>
     <body>
-        <h1>Relatório Financeiro – {periodo}</h1>
-        <p><b>Valor Total:</b> € {total_valor:,.2f}</p>
-        <p><b>Clientes Ativos:</b> {clientes_ativos}</p>
-        <p><b>Ticket Médio:</b> € {ticket_medio:,.2f}</p>
+
+        <h1>Relatório Financeiro</h1>
+        <p><b>Período:</b> {periodo}</p>
+
+        <h2>Resumo</h2>
+        <ul>
+            <li><b>Valor Total:</b> € {total_valor:,.2f}</li>
+            <li><b>Clientes Ativos:</b> {clientes_ativos}</li>
+            <li><b>Perdas:</b> {perdas}</li>
+            <li><b>Ticket Médio:</b> € {ticket_medio:,.2f}</li>
+        </ul>
 
         <h2>Valor por Modalidade</h2>
-        {valor_modalidade.to_frame("Valor").to_html()}
+        {valor_modalidade.to_frame("Valor (€)").to_html()}
+
+        <h2>Valor por Tipo</h2>
+        {valor_tipo.to_frame("Valor (€)").to_html()}
+
+        <h2>Valor por Professor</h2>
+        {valor_professor.to_frame("Valor (€)").to_html()}
+
+        <h2>Valor por Local</h2>
+        {valor_local.to_frame("Valor (€)").to_html()}
+
     </body>
     </html>
     """
@@ -197,5 +136,5 @@ if st.button("🧾 Gerar relatório em HTML"):
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".html")
     Path(tmp.name).write_text(html, encoding="utf-8")
 
-    st.success("Relatório HTML gerado com sucesso")
-    st.markdown(f"[👉 Abrir relatório]({tmp.name})", unsafe_allow_html=True)
+    st.success("Relatório gerado com sucesso")
+    st.markdown(f"👉 [Abrir relatório para imprimir em PDF]({tmp.name})", unsafe_allow_html=True)
