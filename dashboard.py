@@ -56,7 +56,7 @@ def ler_despesas(ficheiros):
             continue
         df_temp["Nome do cliente"] = df_temp["Descrição da Despesa"].astype(str).str.strip().str.upper()
         df_temp["Valor"] = pd.to_numeric(df_temp["Valor"], errors='coerce').fillna(0)
-        df_temp["Modalidade"] = df_temp["Classe"].astype(str).str.strip().str.upper()
+        df_temp["Classe"] = df_temp["Classe"].astype(str).str.strip().str.upper()
         df_temp["Local"] = df_temp["Local"].astype(str).str.strip()
         df_temp["Ativo"] = True
         df_temp["É Perda"] = False
@@ -89,7 +89,7 @@ total_receita = receitas["Valor"].sum() if not receitas.empty else 0
 perdas = int(receitas["É Perda"].sum()) if not receitas.empty else 0
 ticket_medio = total_receita / clientes_ativos if clientes_ativos else 0
 total_despesa = despesas["Valor"].sum() if not despesas.empty else 0
-lucro_liquido = total_receita - total_despesa
+lucro_liquido = total_receita + total_despesa  # soma porque despesas são negativas
 
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("💰 Total Receita", f"€ {total_receita:,.2f}")
@@ -127,7 +127,7 @@ def gerar_grafico_pizza(df_grupo, titulo):
 # ================= DASHBOARD =================
 st.subheader("📌 Receitas x Despesas")
 categorias_receita = ["Modalidade", "Tipo", "Professor", "Local"]
-categorias_despesa = ["Modalidade", "Local"]
+categorias_despesa = ["Classe", "Local"]  # Classe é equivalente à Modalidade
 
 for cat in categorias_receita:
     col_receita, col_despesa = st.columns(2)
@@ -151,18 +151,17 @@ for cat in categorias_receita:
             if fig_pizza: st.pyplot(fig_pizza)
 
 # ================= COMPARATIVO =================
-st.subheader("📌 Comparativo Receita x Despesa por Modalidade")
+st.subheader("📌 Comparativo Receita x Despesa por Classe/Modalidade")
 receita_modalidade = receitas.groupby("Modalidade")["Valor"].sum() if not receitas.empty else pd.Series(dtype=float)
-despesa_modalidade = despesas.groupby("Modalidade")["Valor"].sum() if not despesas.empty else pd.Series(dtype=float)
-comparativo = pd.concat([receita_modalidade, despesa_modalidade], axis=1).fillna(0)
+despesa_classe = despesas.groupby("Classe")["Valor"].sum() if not despesas.empty else pd.Series(dtype=float)
+comparativo = pd.concat([receita_modalidade, despesa_classe], axis=1).fillna(0)
 comparativo.columns = ["Receita", "Despesa"]
 comparativo = comparativo.astype(float)
-
 st.dataframe(comparativo)
 
 if not comparativo.empty:
     fig_comparativo, ax = plt.subplots()
     comparativo.plot(kind="bar", ax=ax)
-    ax.set_title("Comparativo Receita x Despesa por Modalidade")
+    ax.set_title("Comparativo Receita x Despesa por Classe/Modalidade")
     ax.set_ylabel("€")
     st.pyplot(fig_comparativo)
