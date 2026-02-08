@@ -161,4 +161,14 @@ st.divider()
 st.subheader("🎟️ Ticket Médio por Tipo")
 ticket_tipo = (
     df_filtro.groupby("Tipo")["Valor"].sum()
-    / df_filtro[df_filtro["Ativo"]].groupby("T_]()_
+    / df_filtro[df_filtro["Ativo"]].groupby("Tipo")["Nome do cliente"].nunique()
+)
+st.dataframe(ticket_tipo)
+st.bar_chart(ticket_tipo)
+
+st.divider()
+
+# ================= COMPARATIVO GLOBAL =================
+st.header("📈 Comparativo Global")
+valor_por_mes = df.groupby("Mes")["Valor"].sum()
+st.line_chart(valor_por_mes)
