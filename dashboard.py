@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from io import BytesIO
-import tempfile
 import matplotlib
 
 # PDF
@@ -171,8 +170,7 @@ st.subheader("📌 Despesas – Distribuição Percentual e Valor")
 for cat in ["Classe", "Local"]:
     bloco_analise(despesas, cat, "Despesas")
 
-
-# ================= FIGURA RESUMO (FIX DO ERRO) =================
+# ================= RESUMO =================
 def grafico_resumo(df_kpis):
     if df_kpis.empty:
         return None
@@ -193,7 +191,7 @@ st.divider()
 # ================= PDF =================
 st.subheader("📄 Exportar PDF Executivo")
 
-def gerar_pdf_executivo(df_kpis, fig):
+def gerar_pdf_executivo(df_kpis, receitas, despesas, fig_resumo):
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
@@ -201,22 +199,18 @@ def gerar_pdf_executivo(df_kpis, fig):
 
     elementos = []
 
+    # CAPA
     elementos.append(Spacer(1, 6*cm))
     elementos.append(Paragraph("RELATÓRIO FINANCEIRO", styles["Title"]))
-    elementos.append(Spacer(1, 1*cm))
     elementos.append(Paragraph("Dashboard Financeiro", styles["Heading2"]))
     elementos.append(Spacer(1, 1*cm))
-
-    data_hoje = datetime.now().strftime("%d/%m/%Y")
-    elementos.append(Paragraph(f"Data: {data_hoje}", styles["Normal"]))
-
+    elementos.append(Paragraph(datetime.now().strftime("%d/%m/%Y"), styles["Normal"]))
     elementos.append(PageBreak())
 
+    # KPIs
     elementos.append(Paragraph("Resumo Executivo", styles["Heading1"]))
-    elementos.append(Spacer(1, 0.5*cm))
 
     tabela_data = [["Período", "Receita (€)", "Despesa (€)", "Lucro (€)"]]
-
     for _, row in df_kpis.iterrows():
         tabela_data.append([
             row["Período"],
@@ -225,29 +219,61 @@ def gerar_pdf_executivo(df_kpis, fig):
             f"{row['Lucro (€)']:,.2f}"
         ])
 
-    tabela = Table(tabela_data)
-    tabela.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), colors.grey),
-        ("TEXTCOLOR",(0,0),(-1,0),colors.white),
-        ("GRID", (0,0), (-1,-1), 0.5, colors.black),
-    ]))
+    elementos.append(Table(tabela_data))
+    elementos.append(Spacer(1, 1*cm))
 
-    elementos.append(tabela)
+    if fig_resumo:
+        img = BytesIO()
+        fig_resumo.savefig(img, format="png", bbox_inches="tight")
+        img.seek(0)
+        elementos.append(Image(img, width=16*cm, height=9*cm))
+
     elementos.append(PageBreak())
 
-    if fig:
-        img_buffer = BytesIO()
-        fig.savefig(img_buffer, format="png", bbox_inches="tight")
-        img_buffer.seek(0)
-        elementos.append(Image(img_buffer, width=16*cm, height=9*cm))
+    def adicionar_bloco(df, categoria, titulo):
+        if df.empty or categoria not in df.columns:
+            return
+
+        pivot = df.pivot_table(index=categoria, columns="Periodo", values="Valor", aggfunc="sum", fill_value=0)
+        percent = pivot.div(pivot.sum(axis=0), axis=1) * 100
+
+        elementos.append(Paragraph(f"{titulo} por {categoria}", styles["Heading2"]))
+
+        tabela_data = [["Categoria"] + list(pivot.columns)]
+        for idx in pivot.index:
+            linha = [str(idx)]
+            for col in pivot.columns:
+                linha.append(f"{pivot.loc[idx,col]:,.2f} € ({percent.loc[idx,col]:.1f}%)")
+            tabela_data.append(linha)
+
+        elementos.append(Table(tabela_data))
+
+        fig, ax = plt.subplots()
+        pivot.plot(kind="bar", ax=ax)
+        ax.set_title(f"{titulo} por {categoria}")
+
+        img = BytesIO()
+        fig.savefig(img, format="png", bbox_inches="tight")
+        img.seek(0)
+
+        elementos.append(Image(img, width=16*cm, height=9*cm))
+        elementos.append(PageBreak())
+
+    # RECEITAS
+    for cat in ["Modalidade", "Tipo", "Professor", "Local"]:
+        adicionar_bloco(receitas, cat, "Receitas")
+
+    # DESPESAS
+    for cat in ["Classe", "Local"]:
+        adicionar_bloco(despesas, cat, "Despesas")
 
     doc.build(elementos)
     buffer.seek(0)
     return buffer
 
-# ================= BOTÃO =================
+# BOTÃO
 if st.button("📄 Gerar PDF Executivo"):
-    pdf = gerar_pdf_executivo(df_kpis, fig_resumo)
+    pdf = gerar_pdf_executivo(df_kpis, receitas, despesas, fig_resumo)
 
     st.download_button(
         label="📥 Download PDF Executivo",
