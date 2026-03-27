@@ -120,6 +120,17 @@ fig_resumo = grafico_resumo(df_kpis)
 if fig_resumo:
     st.pyplot(fig_resumo)
 
+# ================= RECEITAS =================
+st.subheader("📌 Receitas – Distribuição Percentual e Valor")
+for cat in ["Modalidade", "Tipo", "Professor", "Local"]:
+    bloco_analise(receitas, cat, "Receitas")
+
+# ================= DESPESAS =================
+st.subheader("📌 Despesas – Distribuição Percentual e Valor")
+for cat in ["Classe", "Local"]:
+    bloco_analise(despesas, cat, "Despesas")
+
+
 # ================= PDF EXECUTIVO =================
 st.subheader("📄 Exportar PDF Executivo")
 
