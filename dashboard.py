@@ -6,7 +6,7 @@ import matplotlib
 import re
 
 # PDF
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, PageBreak, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, PageBreak, Image
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
@@ -67,7 +67,7 @@ def ler_despesas(files):
         df["Periodo"] = nome_periodo(f.name)
         df["Valor"] = df["Valor"].apply(limpar_valor)
 
-        # ✅ CORREÇÃO PRINCIPAL
+        # ✅ NÃO DUPLICA NEGATIVO
         df["Valor"] = df["Valor"].apply(lambda x: -abs(x) if x > 0 else x)
 
         df["Classe"] = df.get("Classe", "N/A")
@@ -132,14 +132,22 @@ for p in periodos:
         "Lucro (€)": lucro
     })
 
-df_kpis = pd.DataFrame(kpis)
+# ✅ FIX DEFINITIVO
+df_kpis = pd.DataFrame(
+    kpis,
+    columns=["Período", "Receita (€)", "Despesa (€)", "Lucro (€)"]
+)
 
-# KPIs
+# KPIs seguros
+total_receita = df_kpis["Receita (€)"].sum() if not df_kpis.empty else 0
+total_despesa = df_kpis["Despesa (€)"].sum() if not df_kpis.empty else 0
+total_lucro = df_kpis["Lucro (€)"].sum() if not df_kpis.empty else 0
+
 col1, col2, col3 = st.columns(3)
 
-col1.metric("💰 Receita Total", f"{df_kpis['Receita (€)'].sum():,.2f} €")
-col2.metric("💸 Despesa Total", f"{df_kpis['Despesa (€)'].sum():,.2f} €")
-col3.metric("📈 Lucro Total", f"{df_kpis['Lucro (€)'].sum():,.2f} €")
+col1.metric("💰 Receita Total", f"{total_receita:,.2f} €")
+col2.metric("💸 Despesa Total", f"{total_despesa:,.2f} €")
+col3.metric("📈 Lucro Total", f"{total_lucro:,.2f} €")
 
 st.dataframe(df_kpis, use_container_width=True)
 
