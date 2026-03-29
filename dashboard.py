@@ -6,7 +6,7 @@ import matplotlib
 import re
 
 # PDF
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, PageBreak, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, Image
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
@@ -16,16 +16,27 @@ matplotlib.use("Agg")
 st.set_page_config(page_title="Dashboard Financeiro", layout="wide")
 st.title("📊 Dashboard Financeiro – Comparativo por Período")
 
-# ================= LIMPAR VALORES € =================
+# ================= LIMPEZA FORTE DE VALORES =================
 def limpar_valor(x):
-    if isinstance(x, str):
-        x = re.sub(r"[^\d,.-]", "", x)
-        x = x.replace(",", ".")
-        try:
-            return float(x)
-        except:
+    try:
+        if pd.isna(x):
             return 0.0
-    return float(x) if pd.notnull(x) else 0.0
+
+        x = str(x)
+
+        # remove tudo exceto números, vírgula, ponto e sinal
+        x = re.sub(r"[^\d,.\-]", "", x)
+
+        # padrão europeu → converter
+        if "," in x and "." in x:
+            x = x.replace(".", "").replace(",", ".")
+        else:
+            x = x.replace(",", ".")
+
+        return float(x)
+
+    except:
+        return 0.0
 
 # ================= PERÍODO =================
 def nome_periodo(nome):
@@ -48,11 +59,6 @@ def ler_receitas(files):
         df["Periodo"] = nome_periodo(f.name)
         df["Valor"] = df["Valor"].apply(limpar_valor)
 
-        df["Professor"] = df.get("Professor", "N/A")
-        df["Local"] = df.get("Local", "N/A")
-        df["Modalidade"] = df.get("Modalidade", "N/A")
-        df["Tipo"] = df.get("Tipo", "N/A")
-
         dfs.append(df)
 
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
@@ -67,11 +73,8 @@ def ler_despesas(files):
         df["Periodo"] = nome_periodo(f.name)
         df["Valor"] = df["Valor"].apply(limpar_valor)
 
-        # ✅ NÃO DUPLICA NEGATIVO
-        df["Valor"] = df["Valor"].apply(lambda x: -abs(x) if x > 0 else x)
-
-        df["Classe"] = df.get("Classe", "N/A")
-        df["Local"] = df.get("Local", "N/A")
+        # 🔥 CORREÇÃO DEFINITIVA
+        df["Valor"] = df["Valor"].abs() * -1
 
         dfs.append(df)
 
@@ -87,30 +90,12 @@ periodos = sorted(set(receitas.get("Periodo", [])).union(set(despesas.get("Perio
 
 periodo_sel = st.sidebar.multiselect("Período", periodos, default=periodos)
 
-prof_sel = st.sidebar.multiselect(
-    "Professor",
-    receitas["Professor"].dropna().unique() if not receitas.empty else [],
-    default=receitas["Professor"].dropna().unique() if not receitas.empty else []
-)
-
-local_sel = st.sidebar.multiselect(
-    "Local",
-    receitas["Local"].dropna().unique() if not receitas.empty else [],
-    default=receitas["Local"].dropna().unique() if not receitas.empty else []
-)
-
-# ================= APLICAR FILTROS =================
+# aplicar filtros
 if not receitas.empty:
-    receitas = receitas[
-        receitas["Periodo"].isin(periodo_sel) &
-        receitas["Professor"].isin(prof_sel) &
-        receitas["Local"].isin(local_sel)
-    ]
+    receitas = receitas[receitas["Periodo"].isin(periodo_sel)]
 
 if not despesas.empty:
-    despesas = despesas[
-        despesas["Periodo"].isin(periodo_sel)
-    ]
+    despesas = despesas[despesas["Periodo"].isin(periodo_sel)]
 
 # ================= KPIs =================
 st.subheader("📊 Visão Geral")
@@ -118,8 +103,8 @@ st.subheader("📊 Visão Geral")
 kpis = []
 
 for p in periodos:
-    r = receitas[receitas["Periodo"] == p] if not receitas.empty else pd.DataFrame()
-    d = despesas[despesas["Periodo"] == p] if not despesas.empty else pd.DataFrame()
+    r = receitas[receitas["Periodo"] == p]
+    d = despesas[despesas["Periodo"] == p]
 
     receita = r["Valor"].sum() if not r.empty else 0
     despesa = d["Valor"].sum() if not d.empty else 0
@@ -132,90 +117,36 @@ for p in periodos:
         "Lucro (€)": lucro
     })
 
-# ✅ FIX DEFINITIVO
 df_kpis = pd.DataFrame(
     kpis,
     columns=["Período", "Receita (€)", "Despesa (€)", "Lucro (€)"]
 )
 
-# KPIs seguros
-total_receita = df_kpis["Receita (€)"].sum() if not df_kpis.empty else 0
-total_despesa = df_kpis["Despesa (€)"].sum() if not df_kpis.empty else 0
-total_lucro = df_kpis["Lucro (€)"].sum() if not df_kpis.empty else 0
-
+# KPIs
 col1, col2, col3 = st.columns(3)
 
-col1.metric("💰 Receita Total", f"{total_receita:,.2f} €")
-col2.metric("💸 Despesa Total", f"{total_despesa:,.2f} €")
-col3.metric("📈 Lucro Total", f"{total_lucro:,.2f} €")
+col1.metric("💰 Receita Total", f"{df_kpis['Receita (€)'].sum():,.2f} €")
+col2.metric("💸 Despesa Total", f"{df_kpis['Despesa (€)'].sum():,.2f} €")
+col3.metric("📈 Lucro Total", f"{df_kpis['Lucro (€)'].sum():,.2f} €")
 
 st.dataframe(df_kpis, use_container_width=True)
 
-# ================= GRÁFICOS =================
-def grafico_bar(df, titulo):
-    if df.empty:
-        return None
-    fig, ax = plt.subplots()
-    df.plot(kind="bar", ax=ax)
-    ax.set_title(titulo)
-    return fig
+# ================= DEBUG (REMOVE DEPOIS) =================
+st.write("🔍 Debug Despesas por período:")
+st.write(despesas.groupby("Periodo")["Valor"].sum())
 
-def bloco_analise(df, categoria, titulo):
-    if df.empty or categoria not in df.columns:
-        return
-
-    pivot = df.pivot_table(
-        index=categoria,
-        columns="Periodo",
-        values="Valor",
-        aggfunc="sum",
-        fill_value=0
-    )
-
-    st.markdown(f"### {titulo} por {categoria}")
-    st.dataframe(pivot.round(2))
-
-    fig = grafico_bar(pivot, titulo)
-    if fig:
-        st.pyplot(fig)
-
-# ================= RECEITAS =================
-st.subheader("📌 Receitas")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    bloco_analise(receitas, "Modalidade", "Receitas")
-    bloco_analise(receitas, "Tipo", "Receitas")
-
-with col2:
-    bloco_analise(receitas, "Professor", "Receitas")
-    bloco_analise(receitas, "Local", "Receitas")
-
-# ================= DESPESAS =================
-st.subheader("📌 Despesas")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    bloco_analise(despesas, "Classe", "Despesas")
-
-with col2:
-    bloco_analise(despesas, "Local", "Despesas")
-
-# ================= RESUMO =================
+# ================= GRÁFICO =================
 def grafico_resumo(df):
     if df.empty:
         return None
     fig, ax = plt.subplots()
-    df.set_index("Período")[["Receita (€)", "Despesa (€)", "Lucro (€)"]].plot(kind="bar", ax=ax)
-    ax.set_title("Resumo Financeiro")
+    df.set_index("Período").plot(kind="bar", ax=ax)
     return fig
 
-fig_resumo = grafico_resumo(df_kpis)
+fig = grafico_resumo(df_kpis)
 
-if fig_resumo:
-    st.pyplot(fig_resumo)
+if fig:
+    st.pyplot(fig)
 
 # ================= PDF =================
 def gerar_pdf(df_kpis, fig):
@@ -240,6 +171,5 @@ def gerar_pdf(df_kpis, fig):
     return buffer
 
 if st.button("📄 Gerar PDF"):
-    pdf = gerar_pdf(df_kpis, fig_resumo)
-
+    pdf = gerar_pdf(df_kpis, fig)
     st.download_button("📥 Download PDF", pdf, "relatorio.pdf")
