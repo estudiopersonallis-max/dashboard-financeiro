@@ -10,7 +10,6 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 
-# ================= CONFIG =================
 st.set_page_config(page_title="Dashboard Financeiro", layout="wide")
 st.title("📊 Dashboard Financeiro – Comparativo por Período")
 
@@ -22,17 +21,10 @@ def ler_receitas(files):
         df = pd.read_excel(f)
         if df.empty:
             continue
-
         df["Periodo"] = f.name.replace(".xlsx", "").upper()
         df["Valor"] = pd.to_numeric(df.get("Valor", 0), errors="coerce").fillna(0)
         df["Nome do cliente"] = df.get("Nome do cliente", "").astype(str).str.upper().str.strip()
-        df["Modalidade"] = df.get("Modalidade", "N/A")
-        df["Tipo"] = df.get("Tipo", "N/A")
-        df["Professor"] = df.get("Professor", "N/A")
-        df["Local"] = df.get("Local", "N/A")
-
         dfs.append(df)
-
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
 @st.cache_data
@@ -43,62 +35,35 @@ def ler_despesas(files):
         df = df.dropna(subset=["Valor", "Descrição da Despesa", "Classe"])
         if df.empty:
             continue
-
         df["Periodo"] = f.name.replace(".xlsx", "").upper()
         df["Valor"] = pd.to_numeric(df.get("Valor", 0), errors="coerce").fillna(0)
         df["Classe"] = df.get("Classe", "N/A").astype(str).str.upper().str.strip()
-        df["Local"] = df.get("Local", "N/A").astype(str).str.strip()
-
         dfs.append(df)
-
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
 # ================= UPLOAD =================
-st.sidebar.header("📤 Upload")
 uploaded_receitas = st.sidebar.file_uploader("Receitas", type=["xlsx"], accept_multiple_files=True)
 uploaded_despesas = st.sidebar.file_uploader("Despesas", type=["xlsx"], accept_multiple_files=True)
 
 receitas = ler_receitas(uploaded_receitas) if uploaded_receitas else pd.DataFrame()
 despesas = ler_despesas(uploaded_despesas) if uploaded_despesas else pd.DataFrame()
 
-# ================= FILTROS =================
-st.sidebar.header("🔎 Filtros")
-periodos = sorted(set(receitas.get("Periodo", [])).union(set(despesas.get("Periodo", []))))
-periodo_sel = st.sidebar.multiselect("Períodos", periodos, default=periodos)
-
-if not receitas.empty:
-    receitas = receitas[receitas["Periodo"].isin(periodo_sel)]
-
-if not despesas.empty:
-    despesas = despesas[despesas["Periodo"].isin(periodo_sel)]
-    despesas = despesas[despesas["Classe"] != "DEPÓSITOS"]
-
 # ================= KPIs =================
-st.subheader("📌 KPIs")
-
 receita_total = receitas["Valor"].sum() if not receitas.empty else 0
 despesa_total = despesas["Valor"].sum() if not despesas.empty else 0
-
-# CORREÇÃO DO LUCRO
-lucro_total = receita_total + despesa_total
+lucro_total = receita_total - despesa_total
 margem = (lucro_total / receita_total * 100) if receita_total else 0
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Receita", f"{receita_total:,.0f}€")
-col2.metric("Despesa", f"{despesa_total:,.0f}€")
-col3.metric("Lucro", f"{lucro_total:,.0f}€")
-col4.metric("Margem", f"{margem:.1f}%")
-
 # ================= KPIs POR PERÍODO =================
+periodos = sorted(set(receitas.get("Periodo", [])).union(set(despesas.get("Periodo", []))))
+
 kpis = []
 for p in periodos:
     r = receitas[receitas["Periodo"] == p]
     d = despesas[despesas["Periodo"] == p]
-
     receita = r["Valor"].sum()
     despesa = d["Valor"].sum()
     lucro = receita - despesa
-
     kpis.append({
         "Período": p,
         "Receita": receita,
@@ -113,24 +78,48 @@ if not df_kpis.empty:
     df_kpis["Δ Receita (%)"] = df_kpis["Receita"].pct_change() * 100
     df_kpis["Δ Lucro (%)"] = df_kpis["Lucro"].pct_change() * 100
 
-    st.dataframe(df_kpis.round(2), use_container_width=True)
-
-# ================= GRÁFICO RESUMO =================
+# ================= GRÁFICO =================
 def gerar_fig_resumo(df):
     fig, ax = plt.subplots()
     df.set_index("Período")[["Receita", "Despesa", "Lucro"]].plot(kind="bar", ax=ax)
-    ax.set_title("Resumo Financeiro")
     return fig
 
 fig_resumo = gerar_fig_resumo(df_kpis) if not df_kpis.empty else None
 
-if fig_resumo:
-    st.pyplot(fig_resumo)
+# ================= INSIGHTS =================
+def gerar_insights(df):
+    textos = []
+    if df.empty:
+        return textos
 
-# ================= PDF =================
-st.subheader("📄 Relatório Executivo PDF")
+    if len(df) > 1:
+        ult = df.iloc[-1]
+        prev = df.iloc[-2]
 
-def gerar_pdf(df_kpis, fig_resumo):
+        var_receita = ((ult["Receita"] - prev["Receita"]) / prev["Receita"] * 100) if prev["Receita"] else 0
+        var_lucro = ((ult["Lucro"] - prev["Lucro"]) / prev["Lucro"] * 100) if prev["Lucro"] else 0
+
+        textos.append(f"A receita variou {var_receita:.1f}% no último período.")
+        textos.append(f"O lucro variou {var_lucro:.1f}% no último período.")
+
+    if df["Lucro"].sum() > 0:
+        textos.append("A operação apresenta resultado positivo no período analisado.")
+    else:
+        textos.append("A operação apresenta prejuízo e requer atenção.")
+
+    return textos
+
+insights = gerar_insights(df_kpis)
+
+# ================= TOP CLIENTES =================
+top_clientes = None
+if not receitas.empty:
+    top_clientes = receitas.groupby("Nome do cliente")["Valor"].sum().nlargest(5)
+
+# ================= PDF CONSULTORIA =================
+st.subheader("📄 Relatório Executivo (Consultoria)")
+
+def gerar_pdf_consultoria(df_kpis, fig_resumo, insights, top_clientes):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
@@ -139,14 +128,14 @@ def gerar_pdf(df_kpis, fig_resumo):
 
     # CAPA
     elementos.append(Spacer(1, 6*cm))
-    elementos.append(Paragraph("RELATÓRIO FINANCEIRO", styles["Title"]))
-    elementos.append(Paragraph("Resumo Executivo", styles["Heading2"]))
+    elementos.append(Paragraph("RELATÓRIO EXECUTIVO", styles["Title"]))
+    elementos.append(Paragraph("Análise Financeira", styles["Heading2"]))
     elementos.append(Spacer(1, 1*cm))
     elementos.append(Paragraph(datetime.now().strftime("%d/%m/%Y"), styles["Normal"]))
     elementos.append(PageBreak())
 
-    # KPIs
-    elementos.append(Paragraph("Resumo Financeiro", styles["Heading1"]))
+    # RESUMO
+    elementos.append(Paragraph("Resumo Executivo", styles["Heading1"]))
 
     tabela = [["Período", "Receita", "Despesa", "Lucro", "Margem"]]
     for _, row in df_kpis.iterrows():
@@ -161,11 +150,21 @@ def gerar_pdf(df_kpis, fig_resumo):
     elementos.append(Table(tabela))
     elementos.append(Spacer(1, 1*cm))
 
-    # INSIGHT AUTOMÁTICO
-    lucro_total = df_kpis["Lucro"].sum()
-    texto = "Resultado positivo." if lucro_total > 0 else "Atenção: prejuízo no período."
-    elementos.append(Paragraph(texto, styles["Normal"]))
+    # INSIGHTS
+    elementos.append(Paragraph("Principais Insights", styles["Heading2"]))
+    for i in insights:
+        elementos.append(Paragraph(f"• {i}", styles["Normal"]))
+
     elementos.append(Spacer(1, 1*cm))
+
+    # TOP CLIENTES
+    if top_clientes is not None:
+        elementos.append(Paragraph("Top Clientes", styles["Heading2"]))
+        tabela_top = [["Cliente", "Receita"]]
+        for idx, val in top_clientes.items():
+            tabela_top.append([idx, f"{val:,.2f}€"])
+        elementos.append(Table(tabela_top))
+        elementos.append(Spacer(1, 1*cm))
 
     # GRÁFICO
     if fig_resumo:
@@ -178,15 +177,12 @@ def gerar_pdf(df_kpis, fig_resumo):
     buffer.seek(0)
     return buffer
 
-if st.button("Gerar PDF Executivo"):
-    pdf = gerar_pdf(df_kpis, fig_resumo)
+if st.button("Gerar PDF Consultoria"):
+    pdf = gerar_pdf_consultoria(df_kpis, fig_resumo, insights, top_clientes)
 
     st.download_button(
-        label="📥 Download PDF",
+        label="📥 Download PDF Consultoria",
         data=pdf,
-        file_name="relatorio_executivo.pdf",
+        file_name="relatorio_consultoria.pdf",
         mime="application/pdf"
     )
-
-# ================= FOOTER =================
-st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
