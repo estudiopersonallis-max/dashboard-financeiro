@@ -16,25 +16,21 @@ matplotlib.use("Agg")
 st.set_page_config(page_title="Dashboard Financeiro", layout="wide")
 st.title("📊 Dashboard Financeiro – Comparativo por Período")
 
-# ================= LIMPEZA FORTE DE VALORES =================
+# ================= LIMPAR VALORES =================
 def limpar_valor(x):
     try:
         if pd.isna(x):
             return 0.0
 
         x = str(x)
-
-        # remove tudo exceto números, vírgula, ponto e sinal
         x = re.sub(r"[^\d,.\-]", "", x)
 
-        # padrão europeu → converter
         if "," in x and "." in x:
             x = x.replace(".", "").replace(",", ".")
         else:
             x = x.replace(",", ".")
 
         return float(x)
-
     except:
         return 0.0
 
@@ -53,7 +49,8 @@ def ler_receitas(files):
     dfs = []
     for f in files:
         df = pd.read_excel(f)
-        if df.empty:
+
+        if df.empty or "Valor" not in df.columns:
             continue
 
         df["Periodo"] = nome_periodo(f.name)
@@ -61,41 +58,45 @@ def ler_receitas(files):
 
         dfs.append(df)
 
-    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+    if dfs:
+        return pd.concat(dfs, ignore_index=True)
+
+    return pd.DataFrame(columns=["Periodo", "Valor"])
 
 def ler_despesas(files):
     dfs = []
     for f in files:
         df = pd.read_excel(f)
-        if df.empty:
+
+        if df.empty or "Valor" not in df.columns:
             continue
 
         df["Periodo"] = nome_periodo(f.name)
         df["Valor"] = df["Valor"].apply(limpar_valor)
 
-        # 🔥 CORREÇÃO DEFINITIVA
-        df["Valor"] = df["Valor"].abs() * -1
+        # 🔥 NORMALIZAÇÃO FINAL
+        df["Valor"] = -df["Valor"].abs()
 
         dfs.append(df)
 
-    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+    if dfs:
+        return pd.concat(dfs, ignore_index=True)
 
-receitas = ler_receitas(uploaded_receitas) if uploaded_receitas else pd.DataFrame()
-despesas = ler_despesas(uploaded_despesas) if uploaded_despesas else pd.DataFrame()
+    return pd.DataFrame(columns=["Periodo", "Valor"])
+
+receitas = ler_receitas(uploaded_receitas) if uploaded_receitas else pd.DataFrame(columns=["Periodo", "Valor"])
+despesas = ler_despesas(uploaded_despesas) if uploaded_despesas else pd.DataFrame(columns=["Periodo", "Valor"])
 
 # ================= FILTROS =================
 st.sidebar.header("🔎 Filtros")
 
-periodos = sorted(set(receitas.get("Periodo", [])).union(set(despesas.get("Periodo", []))))
+periodos = sorted(set(receitas["Periodo"]).union(set(despesas["Periodo"])))
 
 periodo_sel = st.sidebar.multiselect("Período", periodos, default=periodos)
 
 # aplicar filtros
-if not receitas.empty:
-    receitas = receitas[receitas["Periodo"].isin(periodo_sel)]
-
-if not despesas.empty:
-    despesas = despesas[despesas["Periodo"].isin(periodo_sel)]
+receitas = receitas[receitas["Periodo"].isin(periodo_sel)] if not receitas.empty else receitas
+despesas = despesas[despesas["Periodo"].isin(periodo_sel)] if not despesas.empty else despesas
 
 # ================= KPIs =================
 st.subheader("📊 Visão Geral")
@@ -106,8 +107,8 @@ for p in periodos:
     r = receitas[receitas["Periodo"] == p]
     d = despesas[despesas["Periodo"] == p]
 
-    receita = r["Valor"].sum() if not r.empty else 0
-    despesa = d["Valor"].sum() if not d.empty else 0
+    receita = r["Valor"].sum()
+    despesa = d["Valor"].sum()
     lucro = receita + despesa
 
     kpis.append({
@@ -122,7 +123,7 @@ df_kpis = pd.DataFrame(
     columns=["Período", "Receita (€)", "Despesa (€)", "Lucro (€)"]
 )
 
-# KPIs
+# KPIs seguros
 col1, col2, col3 = st.columns(3)
 
 col1.metric("💰 Receita Total", f"{df_kpis['Receita (€)'].sum():,.2f} €")
@@ -131,9 +132,13 @@ col3.metric("📈 Lucro Total", f"{df_kpis['Lucro (€)'].sum():,.2f} €")
 
 st.dataframe(df_kpis, use_container_width=True)
 
-# ================= DEBUG (REMOVE DEPOIS) =================
-st.write("🔍 Debug Despesas por período:")
-st.write(despesas.groupby("Periodo")["Valor"].sum())
+# ================= DEBUG SEGURO =================
+st.subheader("🔍 Debug (valores reais)")
+
+if not despesas.empty:
+    st.write(despesas.groupby("Periodo")["Valor"].sum())
+else:
+    st.info("Sem dados de despesas carregados")
 
 # ================= GRÁFICO =================
 def grafico_resumo(df):
