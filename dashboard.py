@@ -16,7 +16,7 @@ matplotlib.use("Agg")
 st.set_page_config(page_title="Dashboard Financeiro", layout="wide")
 st.title("📊 Dashboard Financeiro – Comparativo por Período")
 
-# ================= FUNÇÃO LIMPEZA € =================
+# ================= LIMPAR VALORES € =================
 def limpar_valor(x):
     if isinstance(x, str):
         x = re.sub(r"[^\d,.-]", "", x)
@@ -27,14 +27,17 @@ def limpar_valor(x):
             return 0.0
     return float(x) if pd.notnull(x) else 0.0
 
+# ================= PERÍODO =================
+def nome_periodo(nome):
+    nome = nome.replace(".xlsx", "").strip().upper()
+    nome = nome.replace(".R", "").replace(".D", "")
+    return nome
+
 # ================= UPLOAD =================
 uploaded_receitas = st.file_uploader("Receitas (Excel)", type=["xlsx"], accept_multiple_files=True)
 uploaded_despesas = st.file_uploader("Despesas (Excel)", type=["xlsx"], accept_multiple_files=True)
 
-# ================= FUNÇÕES =================
-def nome_periodo(nome):
-    return nome.replace(".xlsx", "").strip().upper()
-
+# ================= LEITURA =================
 def ler_receitas(files):
     dfs = []
     for f in files:
@@ -64,8 +67,8 @@ def ler_despesas(files):
         df["Periodo"] = nome_periodo(f.name)
         df["Valor"] = df["Valor"].apply(limpar_valor)
 
-        # 🔥 FORÇAR DESPESAS NEGATIVAS
-        df["Valor"] = -abs(df["Valor"])
+        # ✅ CORREÇÃO PRINCIPAL
+        df["Valor"] = df["Valor"].apply(lambda x: -abs(x) if x > 0 else x)
 
         df["Classe"] = df.get("Classe", "N/A")
         df["Local"] = df.get("Local", "N/A")
@@ -74,7 +77,6 @@ def ler_despesas(files):
 
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-# ================= LEITURA =================
 receitas = ler_receitas(uploaded_receitas) if uploaded_receitas else pd.DataFrame()
 despesas = ler_despesas(uploaded_despesas) if uploaded_despesas else pd.DataFrame()
 
@@ -130,9 +132,9 @@ for p in periodos:
         "Lucro (€)": lucro
     })
 
-df_kpis = pd.DataFrame(kpis, columns=["Período", "Receita (€)", "Despesa (€)", "Lucro (€)"])
+df_kpis = pd.DataFrame(kpis)
 
-# KPIs cards
+# KPIs
 col1, col2, col3 = st.columns(3)
 
 col1.metric("💰 Receita Total", f"{df_kpis['Receita (€)'].sum():,.2f} €")
@@ -206,9 +208,6 @@ fig_resumo = grafico_resumo(df_kpis)
 
 if fig_resumo:
     st.pyplot(fig_resumo)
-
-# ================= DEBUG (opcional) =================
-# st.write("DEBUG Despesas:", despesas.groupby("Periodo")["Valor"].sum())
 
 # ================= PDF =================
 def gerar_pdf(df_kpis, fig):
