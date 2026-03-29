@@ -5,7 +5,6 @@ from io import BytesIO
 import matplotlib
 import re
 
-# PDF
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Table
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
@@ -39,19 +38,11 @@ def nome_periodo(nome):
     nome = nome.replace(".R", "").replace(".D", "")
     return nome
 
-# ================= UPLOAD =================
-uploaded_receitas = st.file_uploader("Receitas", type=["xlsx"], accept_multiple_files=True)
-uploaded_despesas = st.file_uploader("Despesas", type=["xlsx"], accept_multiple_files=True)
-
 # ================= LEITURA =================
-def ler_files(files, tipo="receita"):
+def ler_receitas(files):
     dfs = []
     for f in files:
         df = pd.read_excel(f)
-
-        if df.empty:
-            continue
-
         df.columns = df.columns.str.strip().str.upper()
 
         if "VALOR" not in df.columns:
@@ -60,28 +51,42 @@ def ler_files(files, tipo="receita"):
         df["PERIODO"] = nome_periodo(f.name)
         df["VALOR"] = df["VALOR"].apply(limpar_valor)
 
-        if tipo == "despesa":
-            df["VALOR"] = -df["VALOR"].abs()
+        dfs.append(df)
+
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame(columns=["PERIODO","VALOR"])
+
+def ler_despesas(files):
+    dfs = []
+    for f in files:
+        df = pd.read_excel(f)
+        df.columns = df.columns.str.strip().str.upper()
+
+        if "VALOR" not in df.columns:
+            continue
+
+        df["PERIODO"] = nome_periodo(f.name)
+        df["VALOR"] = df["VALOR"].apply(limpar_valor)
+
+        # 🔥 FILTRO CRÍTICO (RESOLVE TEU PROBLEMA)
+        if "CLASSE" in df.columns:
+            df = df[df["CLASSE"].str.upper() != "DEPÓSITOS"]
+
+        # 🔥 garante negativo
+        df["VALOR"] = -df["VALOR"].abs()
 
         dfs.append(df)
 
-    if dfs:
-        return pd.concat(dfs, ignore_index=True)
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame(columns=["PERIODO","VALOR"])
 
-    return pd.DataFrame(columns=["PERIODO", "VALOR"])
+# ================= UPLOAD =================
+uploaded_receitas = st.file_uploader("Receitas", type=["xlsx"], accept_multiple_files=True)
+uploaded_despesas = st.file_uploader("Despesas", type=["xlsx"], accept_multiple_files=True)
 
-receitas = ler_files(uploaded_receitas, "receita") if uploaded_receitas else pd.DataFrame(columns=["PERIODO","VALOR"])
-despesas = ler_files(uploaded_despesas, "despesa") if uploaded_despesas else pd.DataFrame(columns=["PERIODO","VALOR"])
+receitas = ler_receitas(uploaded_receitas) if uploaded_receitas else pd.DataFrame(columns=["PERIODO","VALOR"])
+despesas = ler_despesas(uploaded_despesas) if uploaded_despesas else pd.DataFrame(columns=["PERIODO","VALOR"])
 
-# ================= FILTROS =================
-st.sidebar.header("Filtros")
-
+# ================= PERÍODOS =================
 periodos = sorted(set(receitas["PERIODO"]).union(set(despesas["PERIODO"])))
-
-periodo_sel = st.sidebar.multiselect("Período", periodos, default=periodos)
-
-receitas = receitas[receitas["PERIODO"].isin(periodo_sel)]
-despesas = despesas[despesas["PERIODO"].isin(periodo_sel)]
 
 # ================= KPIs =================
 kpis = []
@@ -96,36 +101,20 @@ for p in periodos:
 
     kpis.append([p, receita, despesa, lucro])
 
-# 🔥 CRIA DATAFRAME SEMPRE COM COLUNAS
-df_kpis = pd.DataFrame(
-    kpis,
-    columns=["Período", "Receita (€)", "Despesa (€)", "Lucro (€)"]
-)
+df_kpis = pd.DataFrame(kpis, columns=["Período","Receita (€)","Despesa (€)","Lucro (€)"])
 
-# 🔥 GARANTIA EXTRA (caso lista vazia)
-if df_kpis.empty:
-    df_kpis = pd.DataFrame(columns=["Período", "Receita (€)", "Despesa (€)", "Lucro (€)"])
-
-# ================= KPIs CARDS =================
-total_receita = df_kpis["Receita (€)"].sum()
-total_despesa = df_kpis["Despesa (€)"].sum()
-total_lucro = df_kpis["Lucro (€)"].sum()
-
+# ================= KPIs =================
 col1, col2, col3 = st.columns(3)
 
-col1.metric("Receita", f"{total_receita:,.2f} €")
-col2.metric("Despesa", f"{total_despesa:,.2f} €")
-col3.metric("Lucro", f"{total_lucro:,.2f} €")
+col1.metric("Receita", f"{df_kpis['Receita (€)'].sum():,.2f} €")
+col2.metric("Despesa", f"{df_kpis['Despesa (€)'].sum():,.2f} €")
+col3.metric("Lucro", f"{df_kpis['Lucro (€)'].sum():,.2f} €")
 
-st.dataframe(df_kpis, use_container_width=True)
+st.dataframe(df_kpis)
 
 # ================= DEBUG =================
-st.subheader("🔍 Debug")
-
-if not despesas.empty:
-    st.write(despesas.groupby("PERIODO")["VALOR"].sum())
-else:
-    st.info("Sem despesas")
+st.subheader("🔍 Debug despesas reais")
+st.write(despesas.groupby("PERIODO")["VALOR"].sum())
 
 # ================= GRÁFICO =================
 if not df_kpis.empty:
