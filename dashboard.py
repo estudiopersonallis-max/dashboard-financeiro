@@ -73,7 +73,7 @@ st.subheader("📌 KPIs")
 
 receita_total = receitas["Valor"].sum() if not receitas.empty else 0
 despesa_total = despesas["Valor"].sum() if not despesas.empty else 0
-lucro_total = receita_total - despesa_total
+lucro_total = receita_total + despesa_total
 margem = (lucro_total / receita_total * 100) if receita_total else 0
 
 col1, col2, col3, col4 = st.columns(4)
