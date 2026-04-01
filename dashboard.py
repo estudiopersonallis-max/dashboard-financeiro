@@ -173,5 +173,53 @@ if st.button("Gerar PDF Completo"):
     pdf = gerar_pdf(figs_pdf)
     st.download_button("Download PDF", pdf, "relatorio_completo.pdf")
 
+# ================= RELATÓRIO ESTILO MCKINSEY =================
+def gerar_relatorio_mckinsey(receitas, despesas, receita_total, lucro_total, margem):
+    if receitas.empty and despesas.empty:
+        return "Dados insuficientes para gerar relatório."
+
+    texto = []
+
+    # 1. Contexto geral
+    texto.append(f"O desempenho financeiro analisado apresenta uma receita total de {receita_total:,.0f}€, com resultado líquido de {lucro_total:,.0f}€, refletindo uma margem de {margem:.1f}%.")
+
+    # 2. Diagnóstico
+    if margem < 10:
+        texto.append("Observa-se uma pressão significativa na rentabilidade, indicando possível desalinhamento entre geração de receita e estrutura de custos.")
+    elif margem < 20:
+        texto.append("A operação apresenta rentabilidade moderada, com potencial de otimização na estrutura de custos.")
+    else:
+        texto.append("A operação demonstra elevada eficiência, com margens saudáveis e sustentáveis.")
+
+    # 3. Concentração de receita
+    if not receitas.empty:
+        top_clientes = receitas.groupby("Nome do cliente")["Valor"].sum()
+        share_top = top_clientes.nlargest(3).sum() / top_clientes.sum() * 100 if top_clientes.sum() else 0
+        texto.append(f"Os 3 principais clientes representam {share_top:.1f}% da receita total, indicando {'alta concentração' if share_top > 50 else 'diversificação adequada'}.")
+
+    # 4. Estrutura de custos
+    if not despesas.empty and receita_total != 0:
+        ratio = abs(despesas["Valor"].sum()) / receita_total * 100
+        texto.append(f"A estrutura de custos corresponde a {ratio:.1f}% da receita, sugerindo {'necessidade de revisão' if ratio > 70 else 'nível controlado de despesas'}.")
+
+    # 5. Recomendações
+    recomendacoes = []
+
+    if margem < 15:
+        recomendacoes.append("Revisar estrutura de custos e eliminar ineficiências operacionais.")
+    if not receitas.empty:
+        recomendacoes.append("Expandir base de clientes para reduzir dependência dos principais." )
+    if margem > 20:
+        recomendacoes.append("Avaliar estratégias de crescimento e escala da operação atual.")
+
+    if recomendacoes:
+        texto.append("Recomenda-se: " + " ".join(recomendacoes))
+
+    return "\n\n".join(texto)
+
+st.subheader("🧾 Relatório Executivo (Estilo McKinsey)")
+texto_mckinsey = gerar_relatorio_mckinsey(receitas, despesas, receita_total, lucro_total, margem)
+st.write(texto_mckinsey)
+
 # ================= FOOTER =================
 st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
