@@ -106,7 +106,7 @@ clientes_ativos_media = receitas.groupby("Periodo")["Nome do cliente"].nunique()
 ticket_medio_receita = receita_media / clientes_ativos_media if clientes_ativos_media else 0
 ticket_medio_despesa = abs(despesa_media) / clientes_ativos_media if clientes_ativos_media else 0
 
-magic_number = abs(despesa_total)
+magic_number = abs(despesa_media)
 
 st.metric("Receita", f"{receita_total:,.0f}€")
 st.metric("Despesa", f"{despesa_total:,.0f}€")
