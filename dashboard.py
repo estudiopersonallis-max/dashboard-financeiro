@@ -304,6 +304,8 @@ col1, col2, col3, col4 = st.columns(4)
 
 # ================= TICKET MÉDIO =================
 if not receitas.empty:
+    clientes_unicos = receitas["Nome do cliente"].nunique()
+
     receita_mes = receitas.groupby("Periodo")["Valor"].sum()
     clientes_mes = receitas.groupby("Periodo")["Nome do cliente"].nunique()
 
@@ -312,6 +314,7 @@ if not receitas.empty:
 else:
     ticket_mensal = 0
     ticket_total = 0
+
 
 # ================= CAC =================
 clientes_media = receitas.groupby("Periodo")["Nome do cliente"].nunique().mean() if not receitas.empty else 0
