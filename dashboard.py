@@ -6,6 +6,18 @@ from datetime import datetime
 import re
 import unicodedata
 
+# PDF
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import cm
+
+# PPTX
+from pptx import Presentation
+from pptx.util import Inches
+from pptx.chart.data import CategoryChartData
+from pptx.enum.chart import XL_CHART_TYPE
+
 # ================= CONFIG =================
 st.set_page_config(page_title="Dashboard Financeiro PRO", layout="wide")
 st.title("📊 Dashboard Financeiro – Nível Consultoria")
@@ -109,12 +121,11 @@ def grafico_bar(df, titulo):
     ax.set_title(titulo)
     return fig
 
-def grafico_percentual(df, titulo):
-    percent = df.div(df.sum(axis=0), axis=1) * 100
-    fig, ax = plt.subplots()
-    percent.plot(kind="barh", ax=ax)
-    ax.set_title(titulo + " (%)")
-    return fig
+# ================= EXPORT HELPERS =================
+figs_pdf = []
+
+def capturar_grafico(fig, titulo, pivot):
+    figs_pdf.append((titulo, fig, pivot))
 
 # ================= UPLOAD =================
 st.sidebar.header("📤 Upload")
@@ -188,21 +199,84 @@ if not receitas.empty:
     st.pyplot(fig_mod)
 
 # ================= TABS =================
-figs_pdf = []
-
 tab1, tab2, tab3 = st.tabs(["📊 Visão Geral", "💰 Receitas", "💸 Despesas"])
 
 with tab2:
     for cat in ["Modalidade", "Tipo", "Professor", "Local"]:
         bloco = receitas.pivot_table(index=cat, columns="Periodo", values="Valor", aggfunc="sum", fill_value=0)
         st.dataframe(bloco)
-        st.pyplot(grafico_bar(bloco, f"Receitas por {cat}"))
+
+        fig = grafico_bar(bloco, f"Receitas por {cat}")
+        st.pyplot(fig)
+
+        capturar_grafico(fig, f"Receitas por {cat}", bloco)
 
 with tab3:
     for cat in ["Classe", "Local"]:
         bloco = despesas.pivot_table(index=cat, columns="Periodo", values="Valor", aggfunc="sum", fill_value=0)
         st.dataframe(bloco)
-        st.pyplot(grafico_bar(bloco, f"Despesas por {cat}"))
+
+        fig = grafico_bar(bloco, f"Despesas por {cat}")
+        st.pyplot(fig)
+
+        capturar_grafico(fig, f"Despesas por {cat}", bloco)
+
+# ================= EXPORT =================
+st.subheader("📄 Exportações")
+
+def gerar_pdf(figs):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elementos = []
+
+    for titulo, fig, _ in figs:
+        elementos.append(Paragraph(titulo, styles["Heading2"]))
+
+        img = BytesIO()
+        fig.savefig(img, format="png", bbox_inches="tight")
+        img.seek(0)
+
+        elementos.append(Image(img, width=16*cm, height=8*cm))
+        elementos.append(PageBreak())
+
+    doc.build(elementos)
+    buffer.seek(0)
+    return buffer
+
+def gerar_ppt(figs):
+    prs = Presentation()
+
+    for titulo, _, pivot in figs:
+        slide = prs.slides.add_slide(prs.slide_layouts[5])
+        slide.shapes.title.text = titulo
+
+        chart_data = CategoryChartData()
+        chart_data.categories = list(pivot.index)
+
+        for col in pivot.columns:
+            chart_data.add_series(str(col), list(pivot[col].values))
+
+        slide.shapes.add_chart(
+            XL_CHART_TYPE.BAR_CLUSTERED,
+            Inches(1), Inches(2), Inches(8), Inches(4),
+            chart_data
+        )
+
+    buffer = BytesIO()
+    prs.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("📄 Gerar PDF Completo"):
+        st.download_button("Download PDF", gerar_pdf(figs_pdf), "relatorio.pdf")
+
+with col2:
+    if st.button("📊 Gerar PPT Editável"):
+        st.download_button("Download PPT", gerar_ppt(figs_pdf), "relatorio.pptx")
 
 # ================= FOOTER =================
 st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
