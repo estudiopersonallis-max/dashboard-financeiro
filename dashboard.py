@@ -155,7 +155,7 @@ if not receitas.empty:
     st.pyplot(fig)
 
 # ================= INSIGHTS =================
-def gerar_insights():
+def gerar_insights(churn, novos, perdidos, ticket_receita, ticket_despesa, lucro):
     insights = []
 
     if len(churn) > 0:
@@ -185,8 +185,10 @@ def gerar_insights():
 
     return insights
 
+insights = gerar_insights(churn, novos, perdidos, ticket_receita, ticket_despesa, lucro)
+
 st.subheader("🧠 Insights Automáticos")
-for i in gerar_insights():
+for i in insights:
     st.write(i)
 
 # ================= EXPORT =================
@@ -199,7 +201,7 @@ def gerar_pdf():
     elementos.append(Paragraph("Relatório Executivo", styles["Title"]))
     elementos.append(Spacer(1,1*cm))
 
-    for i in gerar_insights():
+    for i in insights:
         elementos.append(Paragraph(i, styles["Normal"]))
 
     elementos.append(PageBreak())
@@ -212,7 +214,7 @@ def gerar_ppt():
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[1])
     slide.shapes.title.text = "Resumo Executivo"
-    slide.placeholders[1].text = "\n".join(gerar_insights())
+    slide.placeholders[1].text = "\n".join(insights)
 
     buffer = BytesIO()
     prs.save(buffer)
