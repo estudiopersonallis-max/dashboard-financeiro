@@ -170,12 +170,6 @@ if not receitas.empty:
     top = receitas.groupby("Nome do cliente")["Valor"].sum().nlargest(10)
     st.bar_chart(top)
 
-# ================= EXPORT CSV =================
-st.subheader("📥 Exportar Dados")
-if not df_kpis.empty:
-    csv = df_kpis.to_csv(index=False).encode("utf-8")
-    st.download_button("Download KPIs", csv, "kpis.csv", "text/csv")
-
 # ================= PDF COMPLETO (CONSULTORIA) =================
 st.subheader("📄 Exportar Relatório Completo (Consultoria)")
 
