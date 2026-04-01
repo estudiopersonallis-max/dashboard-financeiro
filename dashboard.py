@@ -96,11 +96,12 @@ despesa_total = despesas["Valor"].sum() if not despesas.empty else 0
 lucro_total = receita_total + despesa_total
 margem = (lucro_total / receita_total * 100) if receita_total else 0
 
-clientes_unicos = receitas["Nome do cliente"].nunique() if not receitas.empty else 0
-ticket_medio_receita = receita_total / clientes_unicos if clientes_unicos else 0
+# NOVO CÁLCULO TICKET MÉDIO
+receita_media = receitas.groupby("Periodo")["Valor"].sum().mean() if not receitas.empty else 0
+clientes_ativos_media = receitas.groupby("Periodo")["Nome do cliente"].nunique().mean() if not receitas.empty else 0
 
-linhas_despesa = len(despesas) if not despesas.empty else 0
-ticket_medio_despesa = abs(despesa_total) / linhas_despesa if linhas_despesa else 0
+ticket_medio_receita = receita_media / clientes_ativos_media if clientes_ativos_media else 0
+ticket_medio_despesa = abs(despesa_total) / clientes_ativos_media if clientes_ativos_media else 0
 
 magic_number = abs(despesa_total)
 
@@ -112,6 +113,25 @@ st.metric("Margem", f"{margem:.1f}%")
 st.metric("Ticket Médio Receita", f"{ticket_medio_receita:,.0f}€")
 st.metric("Ticket Médio Despesa", f"{ticket_medio_despesa:,.0f}€")
 st.metric("Magic Number (Break-even)", f"{magic_number:,.0f}€")
+
+# ================= CLIENTES ATIVOS =================
+st.subheader("👥 Evolução de Clientes")
+
+if not receitas.empty:
+    clientes_por_mes = receitas.groupby("Periodo")["Nome do cliente"].nunique()
+    clientes_por_mes = clientes_por_mes.sort_index()
+
+    primeiros = set(receitas[receitas["Periodo"] == clientes_por_mes.index[0]]["Nome do cliente"])
+    ultimos = set(receitas[receitas["Periodo"] == clientes_por_mes.index[-1]]["Nome do cliente"])
+
+    inativos = len(primeiros - ultimos)
+
+    fig, ax = plt.subplots()
+    clientes_por_mes.plot(ax=ax, marker='o')
+    ax.set_title("Clientes Ativos ao Longo do Tempo")
+    st.pyplot(fig)
+
+    st.write(f"Clientes perdidos (inativos): {inativos}")
 
 # ================= BLOCO ANALISE =================
 def bloco_analise(df, categoria, titulo, figs_pdf):
@@ -207,87 +227,15 @@ def gerar_ppt():
     buffer.seek(0)
     return buffer
 
-st.subheader("💡 Rentabilidade por Cliente")
-
-if not receitas.empty and not despesas.empty:
-
-    custo_local = despesas.groupby("Local")["Valor"].sum()
-
-    receitas_aux = receitas.copy()
-    receitas_aux["Custo Alocado"] = receitas_aux["Local"].map(custo_local) / receitas_aux.groupby("Local")["Valor"].transform("count")
-
-    cliente = receitas_aux.groupby("Nome do cliente").agg({
-        "Valor": "sum",
-        "Custo Alocado": "sum"
-    })
-
-    cliente["Lucro"] = cliente["Valor"] + cliente["Custo Alocado"]
-    cliente = cliente.sort_values("Lucro", ascending=False)
-
-    st.dataframe(cliente)
-
-st.subheader("⚠️ Risco de Concentração")
-
-if not receitas.empty:
-    pareto = receitas.groupby("Nome do cliente")["Valor"].sum().sort_values(ascending=False)
-
-    top1 = pareto.iloc[0] / pareto.sum() * 100 if len(pareto) else 0
-    top5 = pareto.head(5).sum() / pareto.sum() * 100 if len(pareto) else 0
-
-    st.write(f"Top 1 cliente: {top1:.1f}% da receita")
-    st.write(f"Top 5 clientes: {top5:.1f}% da receita")
-
-    pareto_pct = pareto.cumsum() / pareto.sum() * 100
-
-    fig, ax = plt.subplots()
-    pareto_pct.plot(ax=ax)
-    ax.set_title("Curva de Pareto (%)")
-    st.pyplot(fig)
-
-st.subheader("🧠 Simulador de Negócio")
-
-preco = st.slider("Aumento de preço (%)", 0, 30, 10)
-custo = st.slider("Redução de custos (%)", 0, 30, 10)
-
-nova_receita = receita_total * (1 + preco/100)
-novo_custo = despesa_total * (1 - custo/100)
-novo_lucro = nova_receita + novo_custo
-nova_margem = (novo_lucro / nova_receita * 100) if nova_receita else 0
-
-st.write(f"Novo lucro: {novo_lucro:,.0f}€")
-st.write(f"Nova margem: {nova_margem:.1f}%")
-
-st.subheader("🎯 Insights Automáticos")
-
-if not receitas.empty:
-
-    top_cliente = receitas.groupby("Nome do cliente")["Valor"].sum().idxmax()
-    top_valor = receitas.groupby("Nome do cliente")["Valor"].sum().max()
-
-    st.write(f"• Maior cliente: {top_cliente} ({top_valor:,.0f}€)")
-
-    if top_valor / receita_total > 0.3:
-        st.write("⚠️ Alta dependência de um único cliente")
-
-    if margem < 20:
-        st.write("⚠️ Margem baixa — atenção aos custos")
-
-    if ticket_medio_receita < 100:
-        st.write("💡 Ticket médio baixo — oportunidade de aumentar preços")
-
-
 # ================= EXPORT =================
 st.subheader("📄 Exportações")
 
-# PDF COMPLETO (mantido como antes)
 if st.button("Gerar PDF Completo"):
     pdf = gerar_pdf(figs_pdf)
     st.download_button("Download PDF", pdf, "relatorio_completo.pdf")
 
-# PPT EDITÁVEL
 if st.button("Gerar PPT Editável"):
     st.download_button("Download PPT", gerar_ppt(), "apresentacao_editavel.pptx")
 
 # ================= FOOTER =================
-st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
 st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
