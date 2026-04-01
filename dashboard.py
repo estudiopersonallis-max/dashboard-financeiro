@@ -61,7 +61,6 @@ def grafico_bar(df, titulo):
     ax.set_xlabel("€")
     return fig
 
-
 def grafico_percentual(df, titulo):
     percent = df.div(df.sum(axis=0), axis=1) * 100
     fig, ax = plt.subplots()
@@ -96,12 +95,13 @@ despesa_total = despesas["Valor"].sum() if not despesas.empty else 0
 lucro_total = receita_total + despesa_total
 margem = (lucro_total / receita_total * 100) if receita_total else 0
 
-# NOVO CÁLCULO TICKET MÉDIO
+# ✅ MÉDIAS MENSAIS (CORRIGIDO)
 receita_media = receitas.groupby("Periodo")["Valor"].sum().mean() if not receitas.empty else 0
+despesa_media = despesas.groupby("Periodo")["Valor"].sum().mean() if not despesas.empty else 0
 clientes_ativos_media = receitas.groupby("Periodo")["Nome do cliente"].nunique().mean() if not receitas.empty else 0
 
 ticket_medio_receita = receita_media / clientes_ativos_media if clientes_ativos_media else 0
-ticket_medio_despesa = abs(despesa_total) / clientes_ativos_media if clientes_ativos_media else 0
+ticket_medio_despesa = abs(despesa_media) / clientes_ativos_media if clientes_ativos_media else 0
 
 magic_number = abs(despesa_total)
 
@@ -114,7 +114,7 @@ st.metric("Ticket Médio Receita", f"{ticket_medio_receita:,.0f}€")
 st.metric("Ticket Médio Despesa", f"{ticket_medio_despesa:,.0f}€")
 st.metric("Magic Number (Break-even)", f"{magic_number:,.0f}€")
 
-# ================= CLIENTES ATIVOS =================
+# ================= CLIENTES =================
 st.subheader("👥 Evolução de Clientes")
 
 if not receitas.empty:
@@ -126,10 +126,20 @@ if not receitas.empty:
 
     inativos = len(primeiros - ultimos)
 
+    # 📈 Linha
     fig, ax = plt.subplots()
     clientes_por_mes.plot(ax=ax, marker='o')
     ax.set_title("Clientes Ativos ao Longo do Tempo")
     st.pyplot(fig)
+
+    # 📊 Barras (NOVO)
+    fig_bar, ax_bar = plt.subplots()
+    clientes_por_mes.plot(kind="bar", ax=ax_bar)
+    ax_bar.set_title("Clientes Ativos por Mês")
+    ax_bar.set_xlabel("Período")
+    ax_bar.set_ylabel("Nº Clientes")
+    plt.xticks(rotation=45)
+    st.pyplot(fig_bar)
 
     st.write(f"Clientes perdidos (inativos): {inativos}")
 
