@@ -3,7 +3,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from io import BytesIO
 from datetime import datetime
-import re
 import unicodedata
 
 # PDF
@@ -12,7 +11,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 
-# PPTX
+# PPT
 from pptx import Presentation
 
 st.set_page_config(layout="wide")
@@ -44,8 +43,6 @@ def ler_receitas(files):
     dfs = []
     for f in files:
         df = pd.read_excel(f)
-        if df.empty:
-            continue
 
         periodo = f.name.split(".")[0]
         mes = extrair_mes(periodo)
@@ -69,8 +66,6 @@ def ler_despesas(files):
     dfs = []
     for f in files:
         df = pd.read_excel(f)
-        if df.empty:
-            continue
 
         periodo = f.name.split(".")[0]
         mes = extrair_mes(periodo)
@@ -85,8 +80,9 @@ def ler_despesas(files):
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
 # ================= UPLOAD =================
-rec_files = st.file_uploader("Receitas", accept_multiple_files=True)
-desp_files = st.file_uploader("Despesas", accept_multiple_files=True)
+st.sidebar.header("Upload")
+rec_files = st.sidebar.file_uploader("Receitas", accept_multiple_files=True)
+desp_files = st.sidebar.file_uploader("Despesas", accept_multiple_files=True)
 
 receitas = ler_receitas(rec_files) if rec_files else pd.DataFrame()
 despesas = ler_despesas(desp_files) if desp_files else pd.DataFrame()
@@ -105,13 +101,17 @@ ticket_despesa = abs(despesa_media) / clientes_media if clientes_media else 0
 
 magic_number = abs(despesa_media)
 
-st.metric("Receita", f"{receita_total:,.0f}€")
-st.metric("Despesa", f"{despesa_total:,.0f}€")
-st.metric("Lucro", f"{lucro:,.0f}€")
+st.title("📊 Dashboard Financeiro")
 
-st.metric("Ticket Receita", f"{ticket_receita:,.0f}€")
-st.metric("Ticket Despesa", f"{ticket_despesa:,.0f}€")
-st.metric("Break-even", f"{magic_number:,.0f}€")
+col1,col2,col3 = st.columns(3)
+col1.metric("Receita", f"{receita_total:,.0f}€")
+col2.metric("Despesa", f"{despesa_total:,.0f}€")
+col3.metric("Lucro", f"{lucro:,.0f}€")
+
+col4,col5,col6 = st.columns(3)
+col4.metric("Ticket Receita", f"{ticket_receita:,.0f}€")
+col5.metric("Ticket Despesa", f"{ticket_despesa:,.0f}€")
+col6.metric("Break-even", f"{magic_number:,.0f}€")
 
 # ================= CLIENTES =================
 st.subheader("👥 Clientes: Novos vs Perdidos + Churn")
@@ -160,34 +160,34 @@ def gerar_insights(churn, novos, perdidos, ticket_receita, ticket_despesa, lucro
 
     if len(churn) > 0:
         if churn[-1] > 10:
-            insights.append("⚠️ Churn elevado — risco de perda de clientes")
+            insights.append("⚠️ Churn elevado")
         elif churn[-1] < 5:
-            insights.append("📈 Boa retenção de clientes")
+            insights.append("📈 Boa retenção")
 
     if ticket_receita > ticket_despesa:
-        insights.append("💰 Receita por cliente cobre os custos")
+        insights.append("💰 Receita cobre custos")
     else:
-        insights.append("⚠️ Custo por cliente elevado vs receita")
+        insights.append("⚠️ Custos elevados")
 
     if lucro < 0:
-        insights.append("🔴 Negócio em prejuízo")
+        insights.append("🔴 Prejuízo")
     else:
-        insights.append("🟢 Negócio lucrativo")
+        insights.append("🟢 Lucro positivo")
 
     if len(novos) > 0 and len(perdidos) > 0:
         if novos[-1] > perdidos[-1]:
-            insights.append("🚀 Base de clientes em crescimento")
+            insights.append("🚀 Crescimento")
         else:
-            insights.append("⚠️ Perda líquida de clientes")
+            insights.append("⚠️ Perda de clientes")
 
     if not insights:
-        insights.append("✅ Negócio estável")
+        insights.append("✅ Estável")
 
     return insights
 
 insights = gerar_insights(churn, novos, perdidos, ticket_receita, ticket_despesa, lucro)
 
-st.subheader("🧠 Insights Automáticos")
+st.subheader("🧠 Insights")
 for i in insights:
     st.write(i)
 
@@ -205,14 +205,15 @@ def gerar_pdf():
         elementos.append(Paragraph(i, styles["Normal"]))
 
     elementos.append(PageBreak())
-
     doc.build(elementos)
+
     buffer.seek(0)
     return buffer
 
 def gerar_ppt():
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[1])
+
     slide.shapes.title.text = "Resumo Executivo"
     slide.placeholders[1].text = "\n".join(insights)
 
