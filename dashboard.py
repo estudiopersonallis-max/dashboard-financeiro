@@ -195,65 +195,6 @@ st.metric("Despesa", f"{despesa_total:,.0f}€")
 st.metric("Lucro", f"{lucro_total:,.0f}€")
 st.metric("Margem", f"{margem:.1f}%")
 
-# ================= KPIs AVANÇADOS (CORRIGIDO) =================
-st.markdown("## 🧠 KPIs Avançados")
-
-col1, col2, col3, col4 = st.columns(4)
-
-# ================= TICKET MÉDIO =================
-if not receitas.empty:
-    receita_mes = receitas.groupby("Periodo")["Valor"].sum()
-    clientes_mes = receitas.groupby("Periodo")["Nome do cliente"].nunique()
-
-    ticket_mensal = (receita_mes / clientes_mes).mean()
-    ticket_total = receita_total / clientes_unicos if clientes_unicos else 0
-else:
-    ticket_mensal = 0
-    ticket_total = 0
-
-# ================= CAC =================
-clientes_media = receitas.groupby("Periodo")["Nome do cliente"].nunique().mean() if not receitas.empty else 0
-despesa_media = despesas.groupby("Periodo")["Valor"].sum().mean() if not despesas.empty else 0
-cac = abs(despesa_media) / clientes_media if clientes_media else 0
-
-# ================= LTV (CORRIGIDO) =================
-if "Data Inicio" in receitas.columns:
-    hoje = pd.Timestamp.today()
-
-    receitas["meses_ativos"] = ((hoje - receitas["Data Inicio"]).dt.days / 30)
-
-    tempo_por_cliente = (
-        receitas.groupby("Nome do cliente")["meses_ativos"]
-        .max()
-        .replace([float("inf")], 0)
-    )
-
-    tempo_medio = tempo_por_cliente.mean()
-else:
-    tempo_medio = 6  # fallback
-
-ltv = ticket_mensal * tempo_medio
-ltv_cac = ltv / cac if cac else 0
-
-# ================= DISPLAY =================
-with col1:
-    st.metric("🎯 Ticket Mensal", f"{ticket_mensal:,.0f}€")
-
-with col2:
-    st.metric("💸 CAC", f"{cac:,.0f}€")
-
-with col3:
-    st.metric("💰 LTV", f"{ltv:,.0f}€")
-
-with col4:
-    st.metric("⚖️ LTV/CAC", f"{ltv_cac:.2f}")
-
-# (opcional - debug escondido)
-with st.expander("🔍 Detalhes KPIs"):
-    st.write(f"Ticket total (acumulado): {ticket_total:,.0f}€")
-    st.write(f"Tempo médio (meses): {tempo_medio:.1f}")
-
-
 # ================= CLIENTES =================
 st.subheader("👥 Evolução de Clientes")
 if not receitas.empty:
@@ -310,7 +251,123 @@ with tab3:
 
         capturar_grafico(fig, f"Despesas por {cat}", bloco)
 
-# ================= RESTO DO CÓDIGO (EXPORT + KPIs AVANÇADOS) =================
-# (mantido exatamente como você tinha)
+# ================= EXPORT =================
+st.subheader("📄 Exportações")
 
+def gerar_pdf(figs):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elementos = []
+
+    for titulo, fig, _ in figs:
+        elementos.append(Paragraph(titulo, styles["Heading2"]))
+
+        img = BytesIO()
+        fig.savefig(img, format="png", bbox_inches="tight")
+        img.seek(0)
+
+        elementos.append(Image(img, width=16*cm, height=8*cm))
+        elementos.append(PageBreak())
+
+    doc.build(elementos)
+    buffer.seek(0)
+    return buffer
+
+
+def gerar_ppt(figs):
+    prs = Presentation()
+
+    for titulo, _, pivot in figs:
+        slide = prs.slides.add_slide(prs.slide_layouts[5])
+        slide.shapes.title.text = titulo
+
+        chart_data = CategoryChartData()
+        chart_data.categories = list(pivot.index)
+
+        for col in pivot.columns:
+            chart_data.add_series(str(col), list(pivot[col].values))
+
+        slide.shapes.add_chart(
+            XL_CHART_TYPE.BAR_CLUSTERED,
+            Inches(1), Inches(2), Inches(8), Inches(4),
+            chart_data
+        )
+
+    buffer = BytesIO()
+    prs.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+col1_exp, col2_exp = st.columns(2)
+
+with col1_exp:
+    if st.button("📄 Gerar PDF Completo"):
+        st.download_button("Download PDF", gerar_pdf(figs_pdf), "relatorio.pdf")
+
+with col2_exp:
+    if st.button("📊 Gerar PPT Editável"):
+        st.download_button("Download PPT", gerar_ppt(figs_pdf), "relatorio.pptx")
+
+# ================= KPIs AVANÇADOS (CORRIGIDO) =================
+st.markdown("## 🧠 KPIs Avançados")
+
+col1, col2, col3, col4 = st.columns(4)
+
+# ================= TICKET MÉDIO =================
+if not receitas.empty:
+    clientes_unicos = receitas["Nome do cliente"].nunique()
+
+    receita_mes = receitas.groupby("Periodo")["Valor"].sum()
+    clientes_mes = receitas.groupby("Periodo")["Nome do cliente"].nunique()
+
+    ticket_mensal = (receita_mes / clientes_mes).mean()
+    ticket_total = receita_total / clientes_unicos if clientes_unicos else 0
+else:
+    ticket_mensal = 0
+    ticket_total = 0
+
+# ================= CAC =================
+clientes_media = receitas.groupby("Periodo")["Nome do cliente"].nunique().mean() if not receitas.empty else 0
+despesa_media = despesas.groupby("Periodo")["Valor"].sum().mean() if not despesas.empty else 0
+cac = abs(despesa_media) / clientes_media if clientes_media else 0
+
+# ================= LTV (CORRIGIDO) =================
+if "Data Inicio" in receitas.columns:
+    hoje = pd.Timestamp.today()
+
+    receitas["meses_ativos"] = ((hoje - receitas["Data Inicio"]).dt.days / 30)
+
+    tempo_por_cliente = (
+        receitas.groupby("Nome do cliente")["meses_ativos"]
+        .max()
+        .replace([float("inf")], 0)
+    )
+
+    tempo_medio = tempo_por_cliente.mean()
+else:
+    tempo_medio = 6
+
+ltv = ticket_mensal * tempo_medio
+ltv_cac = ltv / cac if cac else 0
+
+# ================= DISPLAY =================
+with col1:
+    st.metric("🎯 Ticket Mensal", f"{ticket_mensal:,.0f}€")
+
+with col2:
+    st.metric("💸 CAC", f"{cac:,.0f}€")
+
+with col3:
+    st.metric("💰 LTV", f"{ltv:,.0f}€")
+
+with col4:
+    st.metric("⚖️ LTV/CAC", f"{ltv_cac:.2f}")
+
+# DEBUG
+with st.expander("🔍 Detalhes KPIs"):
+    st.write(f"Ticket total (acumulado): {ticket_total:,.0f}€")
+    st.write(f"Tempo médio (meses): {tempo_medio:.1f}")
+
+# ================= FOOTER =================
 st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
