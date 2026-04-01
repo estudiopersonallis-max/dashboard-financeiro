@@ -207,6 +207,75 @@ def gerar_ppt():
     buffer.seek(0)
     return buffer
 
+st.subheader("💡 Rentabilidade por Cliente")
+
+if not receitas.empty and not despesas.empty:
+
+    custo_local = despesas.groupby("Local")["Valor"].sum()
+
+    receitas_aux = receitas.copy()
+    receitas_aux["Custo Alocado"] = receitas_aux["Local"].map(custo_local) / receitas_aux.groupby("Local")["Valor"].transform("count")
+
+    cliente = receitas_aux.groupby("Nome do cliente").agg({
+        "Valor": "sum",
+        "Custo Alocado": "sum"
+    })
+
+    cliente["Lucro"] = cliente["Valor"] + cliente["Custo Alocado"]
+    cliente = cliente.sort_values("Lucro", ascending=False)
+
+    st.dataframe(cliente)
+
+st.subheader("⚠️ Risco de Concentração")
+
+if not receitas.empty:
+    pareto = receitas.groupby("Nome do cliente")["Valor"].sum().sort_values(ascending=False)
+
+    top1 = pareto.iloc[0] / pareto.sum() * 100 if len(pareto) else 0
+    top5 = pareto.head(5).sum() / pareto.sum() * 100 if len(pareto) else 0
+
+    st.write(f"Top 1 cliente: {top1:.1f}% da receita")
+    st.write(f"Top 5 clientes: {top5:.1f}% da receita")
+
+    pareto_pct = pareto.cumsum() / pareto.sum() * 100
+
+    fig, ax = plt.subplots()
+    pareto_pct.plot(ax=ax)
+    ax.set_title("Curva de Pareto (%)")
+    st.pyplot(fig)
+
+st.subheader("🧠 Simulador de Negócio")
+
+preco = st.slider("Aumento de preço (%)", 0, 30, 10)
+custo = st.slider("Redução de custos (%)", 0, 30, 10)
+
+nova_receita = receita_total * (1 + preco/100)
+novo_custo = despesa_total * (1 - custo/100)
+novo_lucro = nova_receita + novo_custo
+nova_margem = (novo_lucro / nova_receita * 100) if nova_receita else 0
+
+st.write(f"Novo lucro: {novo_lucro:,.0f}€")
+st.write(f"Nova margem: {nova_margem:.1f}%")
+
+st.subheader("🎯 Insights Automáticos")
+
+if not receitas.empty:
+
+    top_cliente = receitas.groupby("Nome do cliente")["Valor"].sum().idxmax()
+    top_valor = receitas.groupby("Nome do cliente")["Valor"].sum().max()
+
+    st.write(f"• Maior cliente: {top_cliente} ({top_valor:,.0f}€)")
+
+    if top_valor / receita_total > 0.3:
+        st.write("⚠️ Alta dependência de um único cliente")
+
+    if margem < 20:
+        st.write("⚠️ Margem baixa — atenção aos custos")
+
+    if ticket_medio_receita < 100:
+        st.write("💡 Ticket médio baixo — oportunidade de aumentar preços")
+
+
 # ================= EXPORT =================
 st.subheader("📄 Exportações")
 
