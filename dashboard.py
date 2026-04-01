@@ -141,6 +141,54 @@ def ler_clientes(file):
 
     return df
 
+# ================= CLIENTES ATIVOS =================
+st.subheader("👥 Clientes Ativos por Mês")
+
+if not receitas.empty:
+    clientes_ativos = (
+        receitas.groupby(["Periodo", "ordem_mes"])["Nome do cliente"]
+        .nunique()
+        .reset_index()
+        .sort_values("ordem_mes")
+    )
+
+    fig, ax = plt.subplots()
+    ax.plot(clientes_ativos["Periodo"], clientes_ativos["Nome do cliente"], marker="o")
+    ax.set_title("Clientes Ativos por Mês")
+    plt.xticks(rotation=45)
+
+    st.pyplot(fig)
+
+
+# ================= DISTRIBUIÇÃO POR MODALIDADE =================
+st.subheader("📊 Distribuição de Clientes por Modalidade")
+
+if not receitas.empty and "Modalidade" in receitas.columns:
+
+    clientes_modalidade = (
+        receitas.groupby("Modalidade")["Nome do cliente"]
+        .nunique()
+        .sort_values(ascending=False)
+    )
+
+    # Tabela
+    st.dataframe(clientes_modalidade)
+
+    # Gráfico absoluto
+    fig_abs, ax_abs = plt.subplots()
+    clientes_modalidade.plot(kind="barh", ax=ax_abs)
+    ax_abs.set_title("Clientes por Modalidade")
+    st.pyplot(fig_abs)
+
+    # Distribuição %
+    clientes_modalidade_pct = clientes_modalidade / clientes_modalidade.sum() * 100
+
+    fig_pct, ax_pct = plt.subplots()
+    clientes_modalidade_pct.plot(kind="barh", ax=ax_pct)
+    ax_pct.set_title("Distribuição (%) por Modalidade")
+    st.pyplot(fig_pct)
+
+
 # ================= GRÁFICOS =================
 def grafico_bar(df, titulo):
     fig, ax = plt.subplots()
