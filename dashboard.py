@@ -7,16 +7,13 @@ import re
 import unicodedata
 
 # PDF
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 
 # PPTX
 from pptx import Presentation
-from pptx.util import Inches
-from pptx.chart.data import CategoryChartData
-from pptx.enum.chart import XL_CHART_TYPE
 
 st.set_page_config(layout="wide")
 
@@ -29,7 +26,10 @@ def normalizar(txt):
     return txt
 
 # ================= MESES =================
-mapa_meses = {"JAN":1,"FEV":2,"MAR":3,"ABR":4,"MAI":5,"JUN":6,"JUL":7,"AGO":8,"SET":9,"OUT":10,"NOV":11,"DEZ":12}
+mapa_meses = {
+    "JAN":1,"FEV":2,"MAR":3,"ABR":4,"MAI":5,"JUN":6,
+    "JUL":7,"AGO":8,"SET":9,"OUT":10,"NOV":11,"DEZ":12
+}
 
 def extrair_mes(nome):
     nome = normalizar(nome)
@@ -44,14 +44,17 @@ def ler_receitas(files):
     dfs = []
     for f in files:
         df = pd.read_excel(f)
+        if df.empty:
+            continue
+
         periodo = f.name.split(".")[0]
         mes = extrair_mes(periodo)
 
         df["Periodo"] = periodo
         df["ordem_mes"] = mes
-        df["Valor"] = pd.to_numeric(df["Valor"], errors="coerce").fillna(0)
-        df["Nome do cliente"] = df["Nome do cliente"].apply(normalizar)
+        df["Valor"] = pd.to_numeric(df.get("Valor", 0), errors="coerce").fillna(0)
 
+        df["Nome do cliente"] = df.get("Nome do cliente", "").apply(normalizar)
         df = df[df["Nome do cliente"] != ""]
 
         df["Modalidade"] = df.get("Modalidade", "").apply(normalizar)
@@ -59,24 +62,27 @@ def ler_receitas(files):
 
         dfs.append(df)
 
-    return pd.concat(dfs) if dfs else pd.DataFrame()
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
 @st.cache_data
 def ler_despesas(files):
     dfs = []
     for f in files:
         df = pd.read_excel(f)
+        if df.empty:
+            continue
+
         periodo = f.name.split(".")[0]
         mes = extrair_mes(periodo)
 
         df["Periodo"] = periodo
         df["ordem_mes"] = mes
-        df["Valor"] = pd.to_numeric(df["Valor"], errors="coerce").fillna(0)
-        df["Classe"] = df["Classe"].apply(normalizar)
+        df["Valor"] = pd.to_numeric(df.get("Valor", 0), errors="coerce").fillna(0)
+        df["Classe"] = df.get("Classe", "").apply(normalizar)
 
         dfs.append(df)
 
-    return pd.concat(dfs) if dfs else pd.DataFrame()
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
 # ================= UPLOAD =================
 rec_files = st.file_uploader("Receitas", accept_multiple_files=True)
@@ -107,14 +113,16 @@ st.metric("Ticket Receita", f"{ticket_receita:,.0f}€")
 st.metric("Ticket Despesa", f"{ticket_despesa:,.0f}€")
 st.metric("Break-even", f"{magic_number:,.0f}€")
 
-# ================= CLIENTES (CHURN) =================
+# ================= CLIENTES =================
 st.subheader("👥 Clientes: Novos vs Perdidos + Churn")
+
+churn = []
+novos = []
+perdidos = []
 
 if not receitas.empty:
     base = receitas.groupby(["Periodo","ordem_mes"])["Nome do cliente"].apply(set).reset_index()
     base = base.sort_values("ordem_mes")
-
-    novos, perdidos, churn = [], [], []
 
     for i in range(len(base)):
         if i == 0:
@@ -150,14 +158,27 @@ if not receitas.empty:
 def gerar_insights():
     insights = []
 
-    if churn and churn[-1] > 10:
-        insights.append("⚠️ Churn elevado — risco de perda de clientes")
+    if len(churn) > 0:
+        if churn[-1] > 10:
+            insights.append("⚠️ Churn elevado — risco de perda de clientes")
+        elif churn[-1] < 5:
+            insights.append("📈 Boa retenção de clientes")
 
     if ticket_receita > ticket_despesa:
-        insights.append("💰 Modelo saudável — receita por cliente cobre custos")
+        insights.append("💰 Receita por cliente cobre os custos")
+    else:
+        insights.append("⚠️ Custo por cliente elevado vs receita")
 
     if lucro < 0:
         insights.append("🔴 Negócio em prejuízo")
+    else:
+        insights.append("🟢 Negócio lucrativo")
+
+    if len(novos) > 0 and len(perdidos) > 0:
+        if novos[-1] > perdidos[-1]:
+            insights.append("🚀 Base de clientes em crescimento")
+        else:
+            insights.append("⚠️ Perda líquida de clientes")
 
     if not insights:
         insights.append("✅ Negócio estável")
@@ -169,8 +190,6 @@ for i in gerar_insights():
     st.write(i)
 
 # ================= EXPORT =================
-figs_pdf = []
-
 def gerar_pdf():
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
@@ -193,8 +212,7 @@ def gerar_ppt():
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[1])
     slide.shapes.title.text = "Resumo Executivo"
-
-    tf = slide.placeholders[1].text = "\n".join(gerar_insights())
+    slide.placeholders[1].text = "\n".join(gerar_insights())
 
     buffer = BytesIO()
     prs.save(buffer)
@@ -208,3 +226,6 @@ with col1:
 
 with col2:
     st.download_button("📊 PPT", gerar_ppt(), "relatorio.pptx")
+
+# ================= FOOTER =================
+st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
