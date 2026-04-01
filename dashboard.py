@@ -5,10 +5,14 @@ from io import BytesIO
 from datetime import datetime
 
 # PDF
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Image, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
+
+# PPTX
+from pptx import Presentation
+from pptx.util import Inches
 
 # ================= CONFIG =================
 st.set_page_config(page_title="Dashboard Financeiro PRO", layout="wide")
@@ -47,7 +51,7 @@ def ler_despesas(files):
         dfs.append(df)
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-# ================= FUNÇÕES GRÁFICOS =================
+# ================= GRÁFICOS =================
 def grafico_bar(df, titulo):
     fig, ax = plt.subplots()
     df.plot(kind="barh", ax=ax)
@@ -95,6 +99,22 @@ st.metric("Despesa", f"{despesa_total:,.0f}€")
 st.metric("Lucro", f"{lucro_total:,.0f}€")
 st.metric("Margem", f"{margem:.1f}%")
 
+# ================= NARRATIVA =================
+def narrativa_geral():
+    return f"A operação gerou {receita_total:,.0f}€ de receita, com lucro de {lucro_total:,.0f}€ e margem de {margem:.1f}%."
+
+def narrativa_receita():
+    if receitas.empty:
+        return "Sem dados de receita."
+    top = receitas.groupby("Modalidade")["Valor"].sum().idxmax()
+    return f"A principal fonte de receita é {top}."
+
+def narrativa_custos():
+    if despesas.empty:
+        return "Sem dados de custos."
+    top = despesas.groupby("Classe")["Valor"].sum().idxmin()
+    return f"O maior centro de custo é {top}."
+
 # ================= BLOCO ANALISE =================
 def bloco_analise(df, categoria, titulo, figs_pdf):
     if df.empty or categoria not in df.columns:
@@ -119,36 +139,42 @@ figs_pdf = []
 tab1, tab2, tab3 = st.tabs(["📊 Visão Geral", "💰 Receitas", "💸 Despesas"])
 
 with tab1:
-    if not receitas.empty or not despesas.empty:
-        df_kpis = pd.DataFrame({
-            "Receita": [receita_total],
-            "Despesa": [despesa_total],
-            "Lucro": [lucro_total]
-        })
-        fig = grafico_bar(df_kpis.T, "Resumo Financeiro")
-        st.pyplot(fig)
-        figs_pdf.append(("Resumo", fig, None))
+    st.write(narrativa_geral())
 
 with tab2:
+    st.write(narrativa_receita())
     for cat in ["Modalidade", "Tipo", "Professor", "Local"]:
         bloco_analise(receitas, cat, "Receitas", figs_pdf)
 
 with tab3:
+    st.write(narrativa_custos())
     for cat in ["Classe", "Local"]:
         bloco_analise(despesas, cat, "Despesas", figs_pdf)
 
 # ================= PDF COMPLETO =================
-def gerar_pdf(figs_pdf):
+def gerar_pdf():
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
     elementos = []
 
-    elementos.append(Paragraph("RELATÓRIO COMPLETO", styles["Title"]))
+    elementos.append(Paragraph("RELATÓRIO EXECUTIVO", styles["Title"]))
     elementos.append(Spacer(1, 1*cm))
 
+    # Capítulos
+    elementos.append(Paragraph("1. Visão Geral", styles["Heading2"]))
+    elementos.append(Paragraph(narrativa_geral(), styles["Normal"]))
+
+    elementos.append(Paragraph("2. Receita", styles["Heading2"]))
+    elementos.append(Paragraph(narrativa_receita(), styles["Normal"]))
+
+    elementos.append(Paragraph("3. Custos", styles["Heading2"]))
+    elementos.append(Paragraph(narrativa_custos(), styles["Normal"]))
+
+    elementos.append(PageBreak())
+
     for titulo, fig1, fig2 in figs_pdf:
-        elementos.append(Paragraph(titulo, styles["Heading2"]))
+        elementos.append(Paragraph(titulo, styles["Heading3"]))
 
         if fig1:
             img = BytesIO()
@@ -168,58 +194,63 @@ def gerar_pdf(figs_pdf):
     buffer.seek(0)
     return buffer
 
-st.subheader("📄 Exportar PDF Completo")
+# ================= PDF BIG4 =================
+def gerar_pdf_big4():
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elementos = []
+
+    elementos.append(Paragraph("RELATÓRIO ESTRATÉGICO", styles["Title"]))
+    elementos.append(Spacer(1, 1*cm))
+
+    elementos.append(Paragraph("Sumário Executivo", styles["Heading2"]))
+    elementos.append(Paragraph(narrativa_geral(), styles["Normal"]))
+
+    elementos.append(Paragraph("Diagnóstico", styles["Heading2"]))
+    elementos.append(Paragraph(narrativa_receita() + " " + narrativa_custos(), styles["Normal"]))
+
+    elementos.append(Paragraph("Recomendações", styles["Heading2"]))
+    elementos.append(Paragraph("Recomenda-se otimização de custos e expansão de receita.", styles["Normal"]))
+
+    doc.build(elementos)
+    buffer.seek(0)
+    return buffer
+
+# ================= PPT =================
+def gerar_ppt():
+    prs = Presentation()
+
+    slide = prs.slides.add_slide(prs.slide_layouts[1])
+    slide.shapes.title.text = "Resumo Executivo"
+    slide.placeholders[1].text = narrativa_geral()
+
+    for titulo, fig1, fig2 in figs_pdf:
+        slide = prs.slides.add_slide(prs.slide_layouts[5])
+        slide.shapes.title.text = titulo
+
+        if fig1:
+            img = BytesIO()
+            fig1.savefig(img, format="png")
+            img.seek(0)
+            slide.shapes.add_picture(img, Inches(1), Inches(1), width=Inches(8))
+
+    buffer = BytesIO()
+    prs.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+# ================= EXPORT =================
+st.subheader("📄 Exportações")
+
 if st.button("Gerar PDF Completo"):
-    pdf = gerar_pdf(figs_pdf)
-    st.download_button("Download PDF", pdf, "relatorio_completo.pdf")
+    st.download_button("Download PDF", gerar_pdf(), "relatorio.pdf")
 
-# ================= RELATÓRIO ESTILO MCKINSEY =================
-def gerar_relatorio_mckinsey(receitas, despesas, receita_total, lucro_total, margem):
-    if receitas.empty and despesas.empty:
-        return "Dados insuficientes para gerar relatório."
+if st.button("Gerar PDF Estratégico (Big4)"):
+    st.download_button("Download PDF Big4", gerar_pdf_big4(), "relatorio_big4.pdf")
 
-    texto = []
-
-    # 1. Contexto geral
-    texto.append(f"O desempenho financeiro analisado apresenta uma receita total de {receita_total:,.0f}€, com resultado líquido de {lucro_total:,.0f}€, refletindo uma margem de {margem:.1f}%.")
-
-    # 2. Diagnóstico
-    if margem < 10:
-        texto.append("Observa-se uma pressão significativa na rentabilidade, indicando possível desalinhamento entre geração de receita e estrutura de custos.")
-    elif margem < 20:
-        texto.append("A operação apresenta rentabilidade moderada, com potencial de otimização na estrutura de custos.")
-    else:
-        texto.append("A operação demonstra elevada eficiência, com margens saudáveis e sustentáveis.")
-
-    # 3. Concentração de receita
-    if not receitas.empty:
-        top_clientes = receitas.groupby("Nome do cliente")["Valor"].sum()
-        share_top = top_clientes.nlargest(3).sum() / top_clientes.sum() * 100 if top_clientes.sum() else 0
-        texto.append(f"Os 3 principais clientes representam {share_top:.1f}% da receita total, indicando {'alta concentração' if share_top > 50 else 'diversificação adequada'}.")
-
-    # 4. Estrutura de custos
-    if not despesas.empty and receita_total != 0:
-        ratio = abs(despesas["Valor"].sum()) / receita_total * 100
-        texto.append(f"A estrutura de custos corresponde a {ratio:.1f}% da receita, sugerindo {'necessidade de revisão' if ratio > 70 else 'nível controlado de despesas'}.")
-
-    # 5. Recomendações
-    recomendacoes = []
-
-    if margem < 15:
-        recomendacoes.append("Revisar estrutura de custos e eliminar ineficiências operacionais.")
-    if not receitas.empty:
-        recomendacoes.append("Expandir base de clientes para reduzir dependência dos principais." )
-    if margem > 20:
-        recomendacoes.append("Avaliar estratégias de crescimento e escala da operação atual.")
-
-    if recomendacoes:
-        texto.append("Recomenda-se: " + " ".join(recomendacoes))
-
-    return "\n\n".join(texto)
-
-st.subheader("🧾 Relatório Executivo (Estilo McKinsey)")
-texto_mckinsey = gerar_relatorio_mckinsey(receitas, despesas, receita_total, lucro_total, margem)
-st.write(texto_mckinsey)
+if st.button("Gerar Apresentação (PPT)"):
+    st.download_button("Download PPT", gerar_ppt(), "apresentacao.pptx")
 
 # ================= FOOTER =================
 st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
