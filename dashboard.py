@@ -28,13 +28,6 @@ ordem_meses = {
     "OUTUBRO": 10, "NOVEMBRO": 11, "DEZEMBRO": 12
 }
 
-def ordenar_periodo(df):
-    if "Periodo" in df.columns:
-        df["ordem"] = df["Periodo"].map(ordem_meses)
-        df = df.sort_values("ordem")
-        df = df.drop(columns=["ordem"])
-    return df
-
 # ================= CACHE =================
 @st.cache_data
 def ler_receitas(files):
@@ -45,12 +38,24 @@ def ler_receitas(files):
             continue
         df["Periodo"] = f.name.replace(".xlsx", "").upper()
         df["Valor"] = pd.to_numeric(df.get("Valor", 0), errors="coerce").fillna(0)
-        df["Nome do cliente"] = df.get("Nome do cliente", "").astype(str).str.upper().str.strip()
-        df["Modalidade"] = df.get("Modalidade", "N/A")
+
+        # 🔥 NORMALIZAÇÃO CRÍTICA
+        df["Nome do cliente"] = (
+            df.get("Nome do cliente", "")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+
+        df = df[df["Nome do cliente"] != ""]
+
+        df["Modalidade"] = df.get("Modalidade", "N/A").astype(str).str.upper().str.strip()
         df["Tipo"] = df.get("Tipo", "N/A")
         df["Professor"] = df.get("Professor", "N/A")
         df["Local"] = df.get("Local", "N/A")
+
         dfs.append(df)
+
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
 @st.cache_data
@@ -67,24 +72,6 @@ def ler_despesas(files):
         df["Local"] = df.get("Local", "N/A").astype(str).str.strip()
         dfs.append(df)
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
-
-# ================= GRÁFICOS =================
-def grafico_bar(df, titulo):
-    df = ordenar_periodo(df.copy())
-    fig, ax = plt.subplots()
-    df.plot(kind="barh", ax=ax)
-    ax.set_title(titulo)
-    ax.set_xlabel("€")
-    return fig
-
-def grafico_percentual(df, titulo):
-    df = ordenar_periodo(df.copy())
-    percent = df.div(df.sum(axis=0), axis=1) * 100
-    fig, ax = plt.subplots()
-    percent.plot(kind="barh", ax=ax)
-    ax.set_title(titulo + " (%)")
-    ax.set_xlabel("%")
-    return fig
 
 # ================= UPLOAD =================
 st.sidebar.header("📤 Upload")
@@ -130,29 +117,36 @@ st.metric("Ticket Médio Receita", f"{ticket_medio_receita:,.0f}€")
 st.metric("Ticket Médio Despesa", f"{ticket_medio_despesa:,.0f}€")
 st.metric("Magic Number (Break-even)", f"{magic_number:,.0f}€")
 
-# ================= CLIENTES =================
+# ================= CLIENTES (FIXED) =================
 st.subheader("👥 Evolução de Clientes")
 
 if not receitas.empty:
+
     clientes_por_mes = receitas.groupby("Periodo")["Nome do cliente"].nunique()
-    clientes_por_mes.index = clientes_por_mes.index.map(lambda x: ordem_meses.get(x, 99))
-    clientes_por_mes = clientes_por_mes.sort_index()
+
+    # ordenar corretamente
+    clientes_por_mes = clientes_por_mes.sort_index(key=lambda x: x.map(ordem_meses))
 
     fig, ax = plt.subplots()
-    clientes_por_mes.plot(ax=ax, marker='o')
-    ax.set_title("Clientes Ativos ao Longo do Tempo")
-    st.pyplot(fig)
+    clientes_por_mes.plot(kind="line", marker="o", ax=ax)
 
-    fig_bar, ax_bar = plt.subplots()
-    clientes_por_mes.plot(kind="bar", ax=ax_bar)
-    ax_bar.set_title("Clientes Ativos por Mês")
-    st.pyplot(fig_bar)
+    ax.set_title("Clientes Ativos por Mês")
+    ax.set_xlabel("Período")
+    ax.set_ylabel("Clientes")
+
+    plt.xticks(rotation=45)
+
+    st.pyplot(fig)
 
 # ================= CLIENTES POR MODALIDADE =================
 st.subheader("🏋️ Clientes por Modalidade")
 
 if not receitas.empty:
-    clientes_modalidade = receitas.groupby("Modalidade")["Nome do cliente"].nunique().sort_values(ascending=False)
+    clientes_modalidade = (
+        receitas.groupby("Modalidade")["Nome do cliente"]
+        .nunique()
+        .sort_values(ascending=False)
+    )
 
     st.dataframe(clientes_modalidade)
 
@@ -180,6 +174,20 @@ def bloco_analise(df, categoria, titulo, figs_pdf):
 
     figs_pdf.append((f"{titulo} - {categoria}", fig1, fig2, pivot))
 
+# ================= GRÁFICOS AUX =================
+def grafico_bar(df, titulo):
+    fig, ax = plt.subplots()
+    df.plot(kind="barh", ax=ax)
+    ax.set_title(titulo)
+    return fig
+
+def grafico_percentual(df, titulo):
+    percent = df.div(df.sum(axis=0), axis=1) * 100
+    fig, ax = plt.subplots()
+    percent.plot(kind="barh", ax=ax)
+    ax.set_title(titulo + " (%)")
+    return fig
+
 # ================= TABS =================
 figs_pdf = []
 
@@ -196,7 +204,7 @@ with tab3:
     for cat in ["Classe", "Local"]:
         bloco_analise(despesas, cat, "Despesas", figs_pdf)
 
-# ================= PDF COMPLETO =================
+# ================= PDF =================
 def gerar_pdf(figs_pdf):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
@@ -227,7 +235,7 @@ def gerar_pdf(figs_pdf):
     buffer.seek(0)
     return buffer
 
-# ================= PPT EDITÁVEL =================
+# ================= PPT =================
 def gerar_ppt():
     prs = Presentation()
 
