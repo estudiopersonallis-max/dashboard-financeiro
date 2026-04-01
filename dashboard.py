@@ -166,9 +166,35 @@ with tab3:
 
 # ================= TOP CLIENTES =================
 st.subheader("🏆 Top Clientes")
+
 if not receitas.empty:
-    top = receitas.groupby("Nome do cliente")["Valor"].sum().nlargest(10)
-    st.bar_chart(top)
+    receitas_filtradas = receitas.copy()
+
+    top = (
+        receitas_filtradas
+        .groupby(["Periodo", "Nome do cliente"])["Valor"]
+        .sum()
+        .reset_index()
+    )
+
+    # Se apenas 1 período → mostra top desse período
+    if len(periodo_sel) == 1:
+        top = top[top["Periodo"] == periodo_sel[0]]
+        top = top.sort_values("Valor", ascending=False).head(10)
+
+        st.bar_chart(top.set_index("Nome do cliente")["Valor"])
+
+    else:
+        # múltiplos períodos → soma (mas consciente)
+        top = (
+            top.groupby("Nome do cliente")["Valor"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(10)
+        )
+
+        st.bar_chart(top)
+
 
 # ================= EXPORT CSV =================
 st.subheader("📥 Exportar Dados")
