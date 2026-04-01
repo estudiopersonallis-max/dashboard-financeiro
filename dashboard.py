@@ -6,23 +6,11 @@ from datetime import datetime
 import re
 import unicodedata
 
-# PDF
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.units import cm
-
-# PPTX
-from pptx import Presentation
-from pptx.util import Inches
-from pptx.chart.data import CategoryChartData
-from pptx.enum.chart import XL_CHART_TYPE
-
 # ================= CONFIG =================
 st.set_page_config(page_title="Dashboard Financeiro PRO", layout="wide")
 st.title("📊 Dashboard Financeiro – Nível Consultoria")
 
-# ================= NORMALIZA TEXTO =================
+# ================= NORMALIZAÇÃO =================
 def normalizar(txt):
     if pd.isna(txt):
         return ""
@@ -49,19 +37,17 @@ mapa_meses = {
 def extrair_mes(nome):
     nome = normalizar(nome)
 
-    # tenta número (01, 02, etc)
     match = re.search(r'\b(0?[1-9]|1[0-2])\b', nome)
     if match:
         return int(match.group())
 
-    # tenta texto
     for k, v in mapa_meses.items():
         if k in nome:
             return v
 
-    return 99  # fallback
+    return 99
 
-# ================= CACHE =================
+# ================= LEITURA =================
 @st.cache_data
 def ler_receitas(files):
     dfs = []
@@ -78,10 +64,11 @@ def ler_receitas(files):
 
         df["Valor"] = pd.to_numeric(df.get("Valor", 0), errors="coerce").fillna(0)
 
-        df["Nome do cliente"] = normalizar(df.get("Nome do cliente", ""))
+        # ✅ CORRIGIDO (.apply)
+        df["Nome do cliente"] = df.get("Nome do cliente", "").apply(normalizar)
         df = df[df["Nome do cliente"] != ""]
 
-        df["Modalidade"] = normalizar(df.get("Modalidade", "N/A"))
+        df["Modalidade"] = df.get("Modalidade", "N/A").apply(normalizar)
         df["Tipo"] = df.get("Tipo", "N/A")
         df["Professor"] = df.get("Professor", "N/A")
         df["Local"] = df.get("Local", "N/A")
@@ -106,7 +93,10 @@ def ler_despesas(files):
         df["ordem_mes"] = mes
 
         df["Valor"] = pd.to_numeric(df.get("Valor", 0), errors="coerce").fillna(0)
-        df["Classe"] = normalizar(df.get("Classe", "N/A"))
+
+        # ✅ CORRIGIDO (.apply)
+        df["Classe"] = df.get("Classe", "N/A").apply(normalizar)
+
         df["Local"] = df.get("Local", "N/A")
 
         dfs.append(df)
@@ -146,7 +136,7 @@ clientes_ativos_media = receitas.groupby("Periodo")["Nome do cliente"].nunique()
 ticket_medio_receita = receita_media / clientes_ativos_media if clientes_ativos_media else 0
 ticket_medio_despesa = abs(despesa_media) / clientes_ativos_media if clientes_ativos_media else 0
 
-# 🔥 MAGIC NUMBER CORRIGIDO
+# ✅ MAGIC NUMBER CORRIGIDO
 magic_number = abs(despesa_media)
 
 st.metric("Receita", f"{receita_total:,.0f}€")
@@ -175,8 +165,8 @@ if not receitas.empty:
     ax.set_title("Clientes Ativos por Mês")
     ax.set_xlabel("Período")
     ax.set_ylabel("Clientes")
-    plt.xticks(rotation=45)
 
+    plt.xticks(rotation=45)
     st.pyplot(fig)
 
 # ================= MODALIDADE =================
