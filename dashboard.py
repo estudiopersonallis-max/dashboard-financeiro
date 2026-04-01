@@ -20,6 +20,21 @@ from pptx.enum.chart import XL_CHART_TYPE
 st.set_page_config(page_title="Dashboard Financeiro PRO", layout="wide")
 st.title("📊 Dashboard Financeiro – Nível Consultoria")
 
+# ================= ORDEM MESES =================
+ordem_meses = {
+    "JANEIRO": 1, "FEVEREIRO": 2, "MARÇO": 3, "MARCO": 3,
+    "ABRIL": 4, "MAIO": 5, "JUNHO": 6,
+    "JULHO": 7, "AGOSTO": 8, "SETEMBRO": 9,
+    "OUTUBRO": 10, "NOVEMBRO": 11, "DEZEMBRO": 12
+}
+
+def ordenar_periodo(df):
+    if "Periodo" in df.columns:
+        df["ordem"] = df["Periodo"].map(ordem_meses)
+        df = df.sort_values("ordem")
+        df = df.drop(columns=["ordem"])
+    return df
+
 # ================= CACHE =================
 @st.cache_data
 def ler_receitas(files):
@@ -55,6 +70,7 @@ def ler_despesas(files):
 
 # ================= GRÁFICOS =================
 def grafico_bar(df, titulo):
+    df = ordenar_periodo(df.copy())
     fig, ax = plt.subplots()
     df.plot(kind="barh", ax=ax)
     ax.set_title(titulo)
@@ -62,6 +78,7 @@ def grafico_bar(df, titulo):
     return fig
 
 def grafico_percentual(df, titulo):
+    df = ordenar_periodo(df.copy())
     percent = df.div(df.sum(axis=0), axis=1) * 100
     fig, ax = plt.subplots()
     percent.plot(kind="barh", ax=ax)
@@ -95,7 +112,6 @@ despesa_total = despesas["Valor"].sum() if not despesas.empty else 0
 lucro_total = receita_total + despesa_total
 margem = (lucro_total / receita_total * 100) if receita_total else 0
 
-# ✅ MÉDIAS MENSAIS (CORRIGIDO)
 receita_media = receitas.groupby("Periodo")["Valor"].sum().mean() if not receitas.empty else 0
 despesa_media = despesas.groupby("Periodo")["Valor"].sum().mean() if not despesas.empty else 0
 clientes_ativos_media = receitas.groupby("Periodo")["Nome do cliente"].nunique().mean() if not receitas.empty else 0
@@ -119,29 +135,31 @@ st.subheader("👥 Evolução de Clientes")
 
 if not receitas.empty:
     clientes_por_mes = receitas.groupby("Periodo")["Nome do cliente"].nunique()
+    clientes_por_mes.index = clientes_por_mes.index.map(lambda x: ordem_meses.get(x, 99))
     clientes_por_mes = clientes_por_mes.sort_index()
 
-    primeiros = set(receitas[receitas["Periodo"] == clientes_por_mes.index[0]]["Nome do cliente"])
-    ultimos = set(receitas[receitas["Periodo"] == clientes_por_mes.index[-1]]["Nome do cliente"])
-
-    inativos = len(primeiros - ultimos)
-
-    # 📈 Linha
     fig, ax = plt.subplots()
     clientes_por_mes.plot(ax=ax, marker='o')
     ax.set_title("Clientes Ativos ao Longo do Tempo")
     st.pyplot(fig)
 
-    # 📊 Barras (NOVO)
     fig_bar, ax_bar = plt.subplots()
     clientes_por_mes.plot(kind="bar", ax=ax_bar)
     ax_bar.set_title("Clientes Ativos por Mês")
-    ax_bar.set_xlabel("Período")
-    ax_bar.set_ylabel("Nº Clientes")
-    plt.xticks(rotation=45)
     st.pyplot(fig_bar)
 
-    st.write(f"Clientes perdidos (inativos): {inativos}")
+# ================= CLIENTES POR MODALIDADE =================
+st.subheader("🏋️ Clientes por Modalidade")
+
+if not receitas.empty:
+    clientes_modalidade = receitas.groupby("Modalidade")["Nome do cliente"].nunique().sort_values(ascending=False)
+
+    st.dataframe(clientes_modalidade)
+
+    fig_mod, ax_mod = plt.subplots()
+    clientes_modalidade.plot(kind="barh", ax=ax_mod)
+    ax_mod.set_title("Distribuição de Clientes por Modalidade")
+    st.pyplot(fig_mod)
 
 # ================= BLOCO ANALISE =================
 def bloco_analise(df, categoria, titulo, figs_pdf):
@@ -149,6 +167,7 @@ def bloco_analise(df, categoria, titulo, figs_pdf):
         return
 
     pivot = df.pivot_table(index=categoria, columns="Periodo", values="Valor", aggfunc="sum", fill_value=0)
+    pivot = pivot.reindex(sorted(pivot.columns, key=lambda x: ordem_meses.get(x, 99)), axis=1)
 
     st.markdown(f"### {titulo} por {categoria}")
     st.dataframe(pivot)
