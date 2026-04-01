@@ -348,6 +348,150 @@ if st.button("Gerar PDF Premium"):
         file_name="relatorio_financeiro_premium.pdf",
         mime="application/pdf"
     )
+# ================= BIG4 - TEXTO EXECUTIVO =================
+def gerar_texto_executivo(df_kpis):
+    if df_kpis.empty:
+        return "Dados insuficientes para análise."
+
+    receita_total = df_kpis["Receita"].sum()
+    lucro_total = df_kpis["Lucro"].sum()
+    margem_media = df_kpis["Margem (%)"].mean()
+
+    tendencia = ""
+    if len(df_kpis) > 1:
+        if df_kpis["Lucro"].iloc[-1] > df_kpis["Lucro"].iloc[0]:
+            tendencia = "Observa-se uma trajetória de crescimento consistente ao longo do período analisado."
+        else:
+            tendencia = "Verifica-se uma tendência de deterioração do resultado ao longo do período."
+
+    texto = f"""
+    O desempenho financeiro demonstra uma receita acumulada de {receita_total:,.0f}€, 
+    com resultado líquido de {lucro_total:,.0f}€, refletindo uma margem média de {margem_media:.1f}%.
+
+    {tendencia}
+    """
+
+    return texto
+
+
+# ================= ALERTAS INTELIGENTES =================
+def gerar_alertas(receitas, despesas, df_kpis):
+    alertas = []
+
+    if df_kpis.empty:
+        return alertas
+
+    # Margem baixa
+    if df_kpis["Margem (%)"].mean() < 10:
+        alertas.append("Margem média inferior a 10% — possível pressão de custos.")
+
+    # Prejuízo
+    if (df_kpis["Lucro"] < 0).any():
+        alertas.append("Existem períodos com prejuízo operacional.")
+
+    # Concentração clientes
+    if not receitas.empty:
+        top = receitas.groupby("Nome do cliente")["Valor"].sum()
+        if not top.empty:
+            share = top.max() / top.sum() * 100
+            if share > 40:
+                alertas.append(f"Elevada dependência de um único cliente ({share:.1f}% da receita).")
+
+    # Despesas elevadas
+    if not receitas.empty and not despesas.empty:
+        ratio = despesas["Valor"].sum() / receitas["Valor"].sum() * 100
+        if ratio > 80:
+            alertas.append("Estrutura de custos elevada (>80% da receita).")
+
+    return alertas
+
+
+# ================= PDF BIG4 FINAL =================
+def gerar_pdf_big4(df_kpis, receitas, despesas, fig_resumo):
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, PageBreak, Image
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import cm
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elementos = []
+
+    texto_exec = gerar_texto_executivo(df_kpis)
+    alertas = gerar_alertas(receitas, despesas, df_kpis)
+
+    # CAPA
+    elementos.append(Spacer(1, 6*cm))
+    elementos.append(Paragraph("RELATÓRIO FINANCEIRO", styles["Title"]))
+    elementos.append(Paragraph("Análise Executiva - Nível Consultoria", styles["Heading2"]))
+    elementos.append(Spacer(1, 1*cm))
+    elementos.append(Paragraph(datetime.now().strftime("%d/%m/%Y"), styles["Normal"]))
+    elementos.append(PageBreak())
+
+    # TEXTO EXECUTIVO
+    elementos.append(Paragraph("Sumário Executivo", styles["Heading1"]))
+    elementos.append(Paragraph(texto_exec, styles["Normal"]))
+    elementos.append(Spacer(1, 1*cm))
+
+    # ALERTAS
+    if alertas:
+        elementos.append(Paragraph("Principais Alertas", styles["Heading2"]))
+        for a in alertas:
+            elementos.append(Paragraph(f"• {a}", styles["Normal"]))
+        elementos.append(Spacer(1, 1*cm))
+
+    # TABELA KPI
+    tabela = [["Período", "Receita", "Despesa", "Lucro", "Margem"]]
+    for _, row in df_kpis.iterrows():
+        tabela.append([
+            row["Período"],
+            f"{row['Receita']:,.0f}€",
+            f"{row['Despesa']:,.0f}€",
+            f"{row['Lucro']:,.0f}€",
+            f"{row['Margem (%)']:.1f}%"
+        ])
+    elementos.append(Table(tabela))
+
+    elementos.append(PageBreak())
+
+    # GRÁFICO
+    if fig_resumo:
+        img = BytesIO()
+        fig_resumo.savefig(img, format="png", bbox_inches="tight")
+        img.seek(0)
+        elementos.append(Image(img, width=16*cm, height=9*cm))
+
+    elementos.append(PageBreak())
+
+    # TOP CLIENTES
+    if not receitas.empty:
+        top = receitas.groupby("Nome do cliente")["Valor"].sum().nlargest(10)
+        elementos.append(Paragraph("Top Clientes", styles["Heading1"]))
+
+        data = [["Cliente", "Receita"]]
+        for c, v in top.items():
+            data.append([c, f"{v:,.0f}€"])
+
+        elementos.append(Table(data))
+
+    doc.build(elementos)
+    buffer.seek(0)
+    return buffer
+
+
+# ================= BOTÃO =================
+st.subheader("📄 Relatório Executivo (Big4)")
+
+if st.button("Gerar PDF Big4"):
+    pdf = gerar_pdf_big4(df_kpis, receitas, despesas, fig_resumo)
+
+    st.download_button(
+        label="📥 Download PDF Big4",
+        data=pdf,
+        file_name="relatorio_big4.pdf",
+        mime="application/pdf"
+    )
 
 # ================= FOOTER =================
 st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
