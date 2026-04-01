@@ -479,19 +479,5 @@ def gerar_pdf_big4(df_kpis, receitas, despesas, fig_resumo):
     buffer.seek(0)
     return buffer
 
-
-# ================= BOTÃO =================
-st.subheader("📄 Relatório Executivo (Big4)")
-
-if st.button("Gerar PDF Big4"):
-    pdf = gerar_pdf_big4(df_kpis, receitas, despesas, fig_resumo)
-
-    st.download_button(
-        label="📥 Download PDF Big4",
-        data=pdf,
-        file_name="relatorio_big4.pdf",
-        mime="application/pdf"
-    )
-
 # ================= FOOTER =================
 st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
