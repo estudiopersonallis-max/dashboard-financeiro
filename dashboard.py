@@ -64,11 +64,12 @@ def ler_receitas(files):
 
         df["Valor"] = pd.to_numeric(df.get("Valor", 0), errors="coerce").fillna(0)
 
-        # ✅ CORRIGIDO (.apply)
         df["Nome do cliente"] = df.get("Nome do cliente", "").apply(normalizar)
         df = df[df["Nome do cliente"] != ""]
 
         df["Modalidade"] = df.get("Modalidade", "N/A").apply(normalizar)
+        df["Modalidade"] = df["Modalidade"].replace("", "SEM MODALIDADE")
+
         df["Tipo"] = df.get("Tipo", "N/A")
         df["Professor"] = df.get("Professor", "N/A")
         df["Local"] = df.get("Local", "N/A")
@@ -93,8 +94,6 @@ def ler_despesas(files):
         df["ordem_mes"] = mes
 
         df["Valor"] = pd.to_numeric(df.get("Valor", 0), errors="coerce").fillna(0)
-
-        # ✅ CORRIGIDO (.apply)
         df["Classe"] = df.get("Classe", "N/A").apply(normalizar)
 
         df["Local"] = df.get("Local", "N/A")
@@ -102,6 +101,20 @@ def ler_despesas(files):
         dfs.append(df)
 
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
+# ================= GRÁFICOS =================
+def grafico_bar(df, titulo):
+    fig, ax = plt.subplots()
+    df.plot(kind="barh", ax=ax)
+    ax.set_title(titulo)
+    return fig
+
+def grafico_percentual(df, titulo):
+    percent = df.div(df.sum(axis=0), axis=1) * 100
+    fig, ax = plt.subplots()
+    percent.plot(kind="barh", ax=ax)
+    ax.set_title(titulo + " (%)")
+    return fig
 
 # ================= UPLOAD =================
 st.sidebar.header("📤 Upload")
@@ -136,7 +149,6 @@ clientes_ativos_media = receitas.groupby("Periodo")["Nome do cliente"].nunique()
 ticket_medio_receita = receita_media / clientes_ativos_media if clientes_ativos_media else 0
 ticket_medio_despesa = abs(despesa_media) / clientes_ativos_media if clientes_ativos_media else 0
 
-# ✅ MAGIC NUMBER CORRIGIDO
 magic_number = abs(despesa_media)
 
 st.metric("Receita", f"{receita_total:,.0f}€")
@@ -146,7 +158,7 @@ st.metric("Margem", f"{margem:.1f}%")
 
 st.metric("Ticket Médio Receita", f"{ticket_medio_receita:,.0f}€")
 st.metric("Ticket Médio Despesa", f"{ticket_medio_despesa:,.0f}€")
-st.metric("Magic Number (Break-even mensal)", f"{magic_number:,.0f}€")
+st.metric("Magic Number", f"{magic_number:,.0f}€")
 
 # ================= CLIENTES =================
 st.subheader("👥 Evolução de Clientes")
@@ -161,11 +173,6 @@ if not receitas.empty:
 
     fig, ax = plt.subplots()
     ax.plot(clientes_por_mes["Periodo"], clientes_por_mes["Nome do cliente"], marker="o")
-
-    ax.set_title("Clientes Ativos por Mês")
-    ax.set_xlabel("Período")
-    ax.set_ylabel("Clientes")
-
     plt.xticks(rotation=45)
     st.pyplot(fig)
 
@@ -174,13 +181,28 @@ st.subheader("🏋️ Clientes por Modalidade")
 
 if not receitas.empty:
     clientes_modalidade = receitas.groupby("Modalidade")["Nome do cliente"].nunique().sort_values(ascending=False)
-
     st.dataframe(clientes_modalidade)
 
     fig_mod, ax_mod = plt.subplots()
     clientes_modalidade.plot(kind="barh", ax=ax_mod)
-    ax_mod.set_title("Distribuição de Clientes por Modalidade")
     st.pyplot(fig_mod)
+
+# ================= TABS =================
+figs_pdf = []
+
+tab1, tab2, tab3 = st.tabs(["📊 Visão Geral", "💰 Receitas", "💸 Despesas"])
+
+with tab2:
+    for cat in ["Modalidade", "Tipo", "Professor", "Local"]:
+        bloco = receitas.pivot_table(index=cat, columns="Periodo", values="Valor", aggfunc="sum", fill_value=0)
+        st.dataframe(bloco)
+        st.pyplot(grafico_bar(bloco, f"Receitas por {cat}"))
+
+with tab3:
+    for cat in ["Classe", "Local"]:
+        bloco = despesas.pivot_table(index=cat, columns="Periodo", values="Valor", aggfunc="sum", fill_value=0)
+        st.dataframe(bloco)
+        st.pyplot(grafico_bar(bloco, f"Despesas por {cat}"))
 
 # ================= FOOTER =================
 st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
