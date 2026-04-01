@@ -15,9 +15,6 @@ from reportlab.lib.units import cm
 
 # PPTX
 from pptx import Presentation
-from pptx.util import Inches
-from pptx.chart.data import CategoryChartData
-from pptx.enum.chart import XL_CHART_TYPE
 
 # ================= CONFIG =================
 st.set_page_config(page_title="Dashboard Financeiro PRO", layout="wide")
@@ -25,10 +22,9 @@ st.title("📊 Dashboard Financeiro – Nível Consultoria")
 
 # ================= NORMALIZAÇÃO =================
 def normalizar(txt):
-    if pd.isna(txt):
-        return ""
+    if pd.isna(txt): return ""
     txt = str(txt).upper().strip()
-    txt = unicodedata.normalize('NFKD', txt).encode('ASCII', 'ignore').decode('ASCII')
+    txt = unicodedata.normalize('NFKD', txt).encode('ASCII','ignore').decode('ASCII')
     return txt
 
 # ================= DETECTAR MÊS =================
@@ -37,200 +33,146 @@ mapa_meses = {"JAN":1,"FEV":2,"MAR":3,"ABR":4,"MAI":5,"JUN":6,"JUL":7,"AGO":8,"S
 def extrair_mes(nome):
     nome = normalizar(nome)
     match = re.search(r'\\b(0?[1-9]|1[0-2])\\b', nome)
-    if match:
-        return int(match.group())
+    if match: return int(match.group())
     for k,v in mapa_meses.items():
-        if k in nome:
-            return v
+        if k in nome: return v
     return 99
 
 # ================= LEITURA =================
 @st.cache_data(ttl=3600)
 def ler_receitas(files):
-    dfs = []
+    dfs=[]
     for f in files:
-        df = pd.read_excel(f)
-        if df.empty:
-            continue
+        df=pd.read_excel(f)
+        if df.empty: continue
 
-        periodo_nome = f.name.split(".")[0]
-        mes = extrair_mes(periodo_nome)
+        periodo=f.name.split(".")[0]
+        df["Periodo"]=periodo.upper()
+        df["ordem_mes"]=extrair_mes(periodo)
 
-        df["Periodo"] = periodo_nome.upper()
-        df["ordem_mes"] = mes
+        df["Valor"]=pd.to_numeric(df.get("Valor",0),errors="coerce").fillna(0)
+        df["Nome do cliente"]=df.get("Nome do cliente","").apply(normalizar)
+        df=df[df["Nome do cliente"]!=""]
 
-        df["Valor"] = pd.to_numeric(df.get("Valor", 0), errors="coerce").fillna(0)
-        df["Nome do cliente"] = df.get("Nome do cliente", "").apply(normalizar)
-        df = df[df["Nome do cliente"] != ""]
+        df["Modalidade"]=df.get("Modalidade","N/A").apply(normalizar)
+        df["Tipo"]=df.get("Tipo","N/A")
+        df["Professor"]=df.get("Professor","N/A")
+        df["Local"]=df.get("Local","N/A")
 
-        for col in ["Modalidade","Tipo","Professor","Local"]:
-            if col not in df.columns:
-                df[col] = "N/A"
-
-        df["Modalidade"] = df["Modalidade"].apply(normalizar)
         dfs.append(df)
-
-    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+    return pd.concat(dfs,ignore_index=True) if dfs else pd.DataFrame()
 
 @st.cache_data(ttl=3600)
 def ler_despesas(files):
-    dfs = []
+    dfs=[]
     for f in files:
-        df = pd.read_excel(f)
-        if df.empty:
-            continue
+        df=pd.read_excel(f)
+        if df.empty: continue
 
-        periodo_nome = f.name.split(".")[0]
-        mes = extrair_mes(periodo_nome)
+        periodo=f.name.split(".")[0]
+        df["Periodo"]=periodo.upper()
+        df["ordem_mes"]=extrair_mes(periodo)
 
-        df["Periodo"] = periodo_nome.upper()
-        df["ordem_mes"] = mes
+        df["Valor"]=pd.to_numeric(df.get("Valor",0),errors="coerce").fillna(0)
+        df["Classe"]=df.get("Classe","N/A").apply(normalizar)
+        df["Local"]=df.get("Local","N/A")
 
-        df["Valor"] = pd.to_numeric(df.get("Valor", 0), errors="coerce").fillna(0)
-
-        for col in ["Classe","Local"]:
-            if col not in df.columns:
-                df[col] = "N/A"
-
-        df["Classe"] = df["Classe"].apply(normalizar)
         dfs.append(df)
-
-    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
-
-# ================= CLIENTES =================
-@st.cache_data(ttl=3600)
-def ler_clientes(file):
-    df = pd.read_excel(file)
-    df.columns = [normalizar(col) for col in df.columns]
-
-    mapa = {"NOME DO CLIENTE":"Nome do cliente","CLIENTE":"Nome do cliente","DATA INICIO":"Data Inicio","DATA DE INICIO":"Data Inicio"}
-    df = df.rename(columns=mapa)
-
-    if "Nome do cliente" not in df.columns or "Data Inicio" not in df.columns:
-        return pd.DataFrame()
-
-    df["Nome do cliente"] = df["Nome do cliente"].apply(normalizar)
-    df["Data Inicio"] = pd.to_datetime(df["Data Inicio"], errors="coerce")
-    return df
-
-# ================= GRÁFICOS =================
-def grafico_bar(df, titulo):
-    fig, ax = plt.subplots()
-    df.plot(kind="barh", ax=ax)
-    ax.set_title(titulo)
-    return fig
-
-def grafico_bar_percentual(df, titulo):
-    df_pct = df.div(df.sum(axis=0), axis=1).fillna(0)*100
-    fig, ax = plt.subplots()
-    df_pct.plot(kind="barh", ax=ax)
-    ax.set_title(titulo+" (%)")
-    return fig
-
-# ================= EXPORT HELPERS =================
-figs_pdf = []
-
-def capturar(fig, titulo):
-    figs_pdf.append((titulo, fig))
+    return pd.concat(dfs,ignore_index=True) if dfs else pd.DataFrame()
 
 # ================= UPLOAD =================
 st.sidebar.header("📤 Upload")
-uploaded_receitas = st.sidebar.file_uploader("Receitas", type=["xlsx"], accept_multiple_files=True)
-uploaded_despesas = st.sidebar.file_uploader("Despesas", type=["xlsx"], accept_multiple_files=True)
-uploaded_clientes = st.sidebar.file_uploader("Clientes", type=["xlsx"])
+uploaded_receitas=st.sidebar.file_uploader("Receitas",type=["xlsx"],accept_multiple_files=True)
+uploaded_despesas=st.sidebar.file_uploader("Despesas",type=["xlsx"],accept_multiple_files=True)
 
-receitas = ler_receitas(uploaded_receitas) if uploaded_receitas else pd.DataFrame()
-despesas = ler_despesas(uploaded_despesas) if uploaded_despesas else pd.DataFrame()
-
-if uploaded_clientes and not receitas.empty:
-    clientes_df = ler_clientes(uploaded_clientes)
-    if not clientes_df.empty:
-        receitas = receitas.merge(clientes_df, on="Nome do cliente", how="left")
+receitas=ler_receitas(uploaded_receitas) if uploaded_receitas else pd.DataFrame()
+despesas=ler_despesas(uploaded_despesas) if uploaded_despesas else pd.DataFrame()
 
 # ================= KPIs =================
-receita_total = receitas["Valor"].sum() if not receitas.empty else 0
-despesa_total = despesas["Valor"].sum() if not despesas.empty else 0
-lucro_total = receita_total + despesa_total
+receita_total=receitas["Valor"].sum() if not receitas.empty else 0
+despesa_total=despesas["Valor"].sum() if not despesas.empty else 0
+lucro_total=receita_total+despesa_total
 
-col1,col2,col3 = st.columns(3)
-col1.metric("Receita", f"{receita_total:,.0f}€")
-col2.metric("Despesa", f"{despesa_total:,.0f}€")
-col3.metric("Lucro", f"{lucro_total:,.0f}€")
+# ================= KPIs EM COLUNAS =================
+col1,col2,col3,col4=st.columns(4)
+col1.metric("Receita",f"{receita_total:,.0f}€")
+col2.metric("Despesa",f"{despesa_total:,.0f}€")
+col3.metric("Lucro",f"{lucro_total:,.0f}€")
+col4.metric("Margem",f"{(lucro_total/receita_total*100 if receita_total else 0):.1f}%")
 
-# ================= EVOLUÇÃO =================
-st.subheader("📈 Receita vs Despesa vs Lucro")
-if not receitas.empty:
-    receita_mes = receitas.groupby("Periodo")["Valor"].sum()
-    despesa_mes = despesas.groupby("Periodo")["Valor"].sum() if not despesas.empty else receita_mes*0
-    lucro_mes = receita_mes + despesa_mes
+# ================= TABS (MANTIDAS) =================
+tab1,tab2,tab3=st.tabs(["📊 Visão Geral","💰 Receitas","💸 Despesas"])
 
-    df_ev = pd.DataFrame({"Receita":receita_mes,"Despesa":despesa_mes,"Lucro":lucro_mes})
-    st.line_chart(df_ev)
+# ================= VISÃO GERAL =================
+with tab1:
+    st.subheader("📈 Receita vs Despesa vs Lucro")
+    if not receitas.empty:
+        r=receitas.groupby("Periodo")["Valor"].sum()
+        d=despesas.groupby("Periodo")["Valor"].sum() if not despesas.empty else r*0
+        l=r+d
+        st.line_chart(pd.DataFrame({"Receita":r,"Despesa":d,"Lucro":l}))
 
-# ================= TOP CLIENTES =================
-st.subheader("🏆 Top Clientes")
-if not receitas.empty:
-    top = receitas.groupby("Nome do cliente")["Valor"].sum().sort_values(ascending=False).head(10)
-    st.dataframe(top)
+    st.subheader("🏆 Top Clientes")
+    if not receitas.empty:
+        top=receitas.groupby("Nome do cliente")["Valor"].sum().sort_values(ascending=False).head(10)
+        st.dataframe(top)
 
-# ================= ALERTAS =================
-st.subheader("🚨 Alertas")
-if lucro_total < 0:
-    st.error("Prejuízo detectado")
-if receita_total > 0 and (lucro_total/receita_total)<0.2:
-    st.warning("Margem baixa")
+    st.subheader("🚨 Alertas")
+    if lucro_total<0: st.error("Prejuízo")
+    if receita_total>0 and (lucro_total/receita_total)<0.2: st.warning("Margem baixa")
 
-# ================= KPIs AVANÇADOS =================
+# ================= RECEITAS =================
+with tab2:
+    for cat in ["Modalidade","Tipo","Professor","Local"]:
+        if cat in receitas.columns:
+            bloco=receitas.pivot_table(index=cat,columns="Periodo",values="Valor",aggfunc="sum",fill_value=0)
+            st.dataframe(bloco)
+            fig,ax=plt.subplots()
+            bloco.plot(kind="barh",ax=ax)
+            st.pyplot(fig)
+
+# ================= DESPESAS =================
+with tab3:
+    for cat in ["Classe","Local"]:
+        if cat in despesas.columns:
+            bloco=despesas.pivot_table(index=cat,columns="Periodo",values="Valor",aggfunc="sum",fill_value=0)
+            st.dataframe(bloco)
+            fig,ax=plt.subplots()
+            bloco.plot(kind="barh",ax=ax)
+            st.pyplot(fig)
+
+# ================= KPIs AVANÇADOS (CORRIGIDO) =================
 st.subheader("🧠 KPIs Avançados")
 
 if not receitas.empty:
-    clientes = receitas["Nome do cliente"].nunique()
-    ticket = receita_total/clientes if clientes else 0
+    receita_mes=receitas.groupby("Periodo")["Valor"].sum()
+    clientes_mes=receitas.groupby("Periodo")["Nome do cliente"].nunique()
+    ticket_mensal=(receita_mes/clientes_mes).mean()
 else:
-    ticket = 0
+    ticket_mensal=0
 
-cac = abs(despesa_total)/clientes if clientes else 0
-ltv = ticket*6
+clientes_unicos=receitas["Nome do cliente"].nunique() if not receitas.empty else 0
 
-col1,col2,col3 = st.columns(3)
-col1.metric("Ticket", f"{ticket:,.0f}€")
-col2.metric("CAC", f"{cac:,.0f}€")
-col3.metric("LTV", f"{ltv:,.0f}€")
+cac=abs(despesa_total)/clientes_unicos if clientes_unicos else 0
+ltv=ticket_mensal*6
 
-# ================= EXPORT PDF =================
+col1,col2,col3,col4=st.columns(4)
+col1.metric("🎯 Ticket Mensal",f"{ticket_mensal:,.0f}€")
+col2.metric("💸 CAC",f"{cac:,.0f}€")
+col3.metric("💰 LTV",f"{ltv:,.0f}€")
+col4.metric("⚖️ LTV/CAC",f"{(ltv/cac if cac else 0):.2f}")
+
+# ================= EXPORT =================
 def gerar_pdf():
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
-    styles = getSampleStyleSheet()
-    elems = []
-
-    elems.append(Paragraph("Dashboard Financeiro", styles['Title']))
-
-    for titulo, fig in figs_pdf:
-        img = BytesIO()
-        fig.savefig(img, format='png')
-        img.seek(0)
-        elems.append(Paragraph(titulo, styles['Heading2']))
-        elems.append(Image(img, width=16*cm, height=8*cm))
-        elems.append(PageBreak())
-
+    buffer=BytesIO()
+    doc=SimpleDocTemplate(buffer,pagesize=A4)
+    styles=getSampleStyleSheet()
+    elems=[Paragraph("Dashboard Financeiro",styles['Title'])]
     doc.build(elems)
     buffer.seek(0)
     return buffer
 
-# ================= EXPORT PPT =================
-def gerar_ppt():
-    prs = Presentation()
-    for titulo, fig in figs_pdf:
-        slide = prs.slides.add_slide(prs.slide_layouts[5])
-        slide.shapes.title.text = titulo
-    buffer = BytesIO()
-    prs.save(buffer)
-    buffer.seek(0)
-    return buffer
-
-st.download_button("📄 Download PDF", gerar_pdf(), "relatorio.pdf")
-st.download_button("📊 Download PPT", gerar_ppt(), "relatorio.pptx")
+st.download_button("📄 PDF",gerar_pdf(),"relatorio.pdf")
 
 # ================= FOOTER =================
 st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
