@@ -147,6 +147,37 @@ with tab3:
     for cat in ["Classe", "Local"]:
         bloco_analise(despesas, cat, "Despesas", figs_pdf)
 
+# ================= PDF COMPLETO =================
+def gerar_pdf(figs_pdf):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elementos = []
+
+    elementos.append(Paragraph("RELATÓRIO COMPLETO", styles["Title"]))
+    elementos.append(Spacer(1, 1*cm))
+
+    for titulo, fig1, fig2, _ in figs_pdf:
+        elementos.append(Paragraph(titulo, styles["Heading2"]))
+
+        if fig1:
+            img = BytesIO()
+            fig1.savefig(img, format="png", bbox_inches="tight")
+            img.seek(0)
+            elementos.append(Image(img, width=16*cm, height=8*cm))
+
+        if fig2:
+            img2 = BytesIO()
+            fig2.savefig(img2, format="png", bbox_inches="tight")
+            img2.seek(0)
+            elementos.append(Image(img2, width=16*cm, height=8*cm))
+
+        elementos.append(PageBreak())
+
+    doc.build(elementos)
+    buffer.seek(0)
+    return buffer
+
 # ================= PPT EDITÁVEL =================
 def gerar_ppt():
     prs = Presentation()
