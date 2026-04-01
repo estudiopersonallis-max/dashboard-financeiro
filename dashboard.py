@@ -3,6 +3,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from io import BytesIO
 from datetime import datetime
+import re
+import unicodedata
 
 # PDF
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak
@@ -20,24 +22,44 @@ from pptx.enum.chart import XL_CHART_TYPE
 st.set_page_config(page_title="Dashboard Financeiro PRO", layout="wide")
 st.title("📊 Dashboard Financeiro – Nível Consultoria")
 
-# ================= FUNÇÕES AUX =================
+# ================= NORMALIZAÇÃO =================
+def normalizar(txt):
+    if pd.isna(txt):
+        return ""
+    txt = str(txt).upper().strip()
+    txt = unicodedata.normalize('NFKD', txt).encode('ASCII', 'ignore').decode('ASCII')
+    return txt
+
+# ================= DETECTAR MÊS =================
+mapa_meses = {
+    "JAN":1, "JANEIRO":1,
+    "FEV":2, "FEVEREIRO":2,
+    "MAR":3, "MARCO":3,
+    "ABR":4, "ABRIL":4,
+    "MAI":5, "MAIO":5,
+    "JUN":6, "JUNHO":6,
+    "JUL":7, "JULHO":7,
+    "AGO":8, "AGOSTO":8,
+    "SET":9, "SETEMBRO":9,
+    "OUT":10, "OUTUBRO":10,
+    "NOV":11, "NOVEMBRO":11,
+    "DEZ":12, "DEZEMBRO":12
+}
+
 def extrair_mes(nome):
-    meses = {
-        "JAN":1,"FEV":2,"MAR":3,"ABR":4,"MAI":5,"JUN":6,
-        "JUL":7,"AGO":8,"SET":9,"OUT":10,"NOV":11,"DEZ":12
-    }
-    nome = nome.upper()
-    for k,v in meses.items():
+    nome = normalizar(nome)
+
+    match = re.search(r'\b(0?[1-9]|1[0-2])\b', nome)
+    if match:
+        return int(match.group())
+
+    for k, v in mapa_meses.items():
         if k in nome:
             return v
+
     return 99
 
-def normalizar(col):
-    if isinstance(col, pd.Series):
-        return col.astype(str).str.upper().str.strip()
-    return ""
-
-# ================= CACHE =================
+# ================= LEITURA =================
 @st.cache_data
 def ler_receitas(files):
     dfs = []
@@ -46,11 +68,23 @@ def ler_receitas(files):
         if df.empty:
             continue
 
-        df["Periodo"] = f.name.replace(".xlsx", "").upper()
-        df["Mes_num"] = extrair_mes(df["Periodo"].iloc[0])
+        periodo_nome = f.name.split(".")[0]
+        mes = extrair_mes(periodo_nome)
+
+        df["Periodo"] = periodo_nome.upper()
+        df["ordem_mes"] = mes
 
         df["Valor"] = pd.to_numeric(df.get("Valor", 0), errors="coerce").fillna(0)
-        df["Nome do cliente"] = normalizar(df.get("Nome do cliente", ""))
+
+        df["Nome do cliente"] = df.get("Nome do cliente", "").apply(normalizar)
+        df = df[df["Nome do cliente"] != ""]
+
+        df["Modalidade"] = df.get("Modalidade", "N/A").apply(normalizar)
+        df["Modalidade"] = df["Modalidade"].replace("", "SEM MODALIDADE")
+
+        df["Tipo"] = df.get("Tipo", "N/A")
+        df["Professor"] = df.get("Professor", "N/A")
+        df["Local"] = df.get("Local", "N/A")
 
         dfs.append(df)
 
@@ -61,24 +95,57 @@ def ler_despesas(files):
     dfs = []
     for f in files:
         df = pd.read_excel(f)
+        df = df.dropna(subset=["Valor", "Descrição da Despesa", "Classe"])
         if df.empty:
             continue
 
-        df["Periodo"] = f.name.replace(".xlsx", "").upper()
-        df["Mes_num"] = extrair_mes(df["Periodo"].iloc[0])
+        periodo_nome = f.name.split(".")[0]
+        mes = extrair_mes(periodo_nome)
+
+        df["Periodo"] = periodo_nome.upper()
+        df["ordem_mes"] = mes
 
         df["Valor"] = pd.to_numeric(df.get("Valor", 0), errors="coerce").fillna(0)
+        df["Classe"] = df.get("Classe", "N/A").apply(normalizar)
+
+        df["Local"] = df.get("Local", "N/A")
 
         dfs.append(df)
 
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
+# ================= GRÁFICOS =================
+def grafico_bar(df, titulo):
+    fig, ax = plt.subplots()
+    df.plot(kind="barh", ax=ax)
+    ax.set_title(titulo)
+    return fig
+
+# ================= EXPORT HELPERS =================
+figs_pdf = []
+
+def capturar_grafico(fig, titulo, pivot):
+    figs_pdf.append((titulo, fig, pivot))
+
 # ================= UPLOAD =================
+st.sidebar.header("📤 Upload")
 uploaded_receitas = st.sidebar.file_uploader("Receitas", type=["xlsx"], accept_multiple_files=True)
 uploaded_despesas = st.sidebar.file_uploader("Despesas", type=["xlsx"], accept_multiple_files=True)
 
 receitas = ler_receitas(uploaded_receitas) if uploaded_receitas else pd.DataFrame()
 despesas = ler_despesas(uploaded_despesas) if uploaded_despesas else pd.DataFrame()
+
+# ================= FILTROS =================
+st.sidebar.header("🔎 Filtros")
+periodos = sorted(set(receitas.get("Periodo", [])).union(set(despesas.get("Periodo", []))))
+periodo_sel = st.sidebar.multiselect("Períodos", periodos, default=periodos)
+
+if not receitas.empty:
+    receitas = receitas[receitas["Periodo"].isin(periodo_sel)]
+
+if not despesas.empty:
+    despesas = despesas[despesas["Periodo"].isin(periodo_sel)]
+    despesas = despesas[despesas["Classe"] != "DEPOSITOS"]
 
 # ================= KPIs =================
 receita_total = receitas["Valor"].sum() if not receitas.empty else 0
@@ -87,144 +154,129 @@ lucro_total = receita_total + despesa_total
 margem = (lucro_total / receita_total * 100) if receita_total else 0
 
 receita_media = receitas.groupby("Periodo")["Valor"].sum().mean() if not receitas.empty else 0
-clientes_media = receitas.groupby("Periodo")["Nome do cliente"].nunique().mean() if not receitas.empty else 0
+despesa_media = despesas.groupby("Periodo")["Valor"].sum().mean() if not despesas.empty else 0
+clientes_ativos_media = receitas.groupby("Periodo")["Nome do cliente"].nunique().mean() if not receitas.empty else 0
 
-ticket_medio_receita = receita_media / clientes_media if clientes_media else 0
-ticket_medio_despesa = abs(despesa_total) / clientes_media if clientes_media else 0
+ticket_medio_receita = receita_media / clientes_ativos_media if clientes_ativos_media else 0
+ticket_medio_despesa = abs(despesa_media) / clientes_ativos_media if clientes_ativos_media else 0
 
-magic_number = abs(despesa_total)
+magic_number = abs(despesa_media)
 
 st.metric("Receita", f"{receita_total:,.0f}€")
 st.metric("Despesa", f"{despesa_total:,.0f}€")
 st.metric("Lucro", f"{lucro_total:,.0f}€")
 st.metric("Margem", f"{margem:.1f}%")
-st.metric("Ticket Receita", f"{ticket_medio_receita:,.0f}€")
-st.metric("Ticket Despesa", f"{ticket_medio_despesa:,.0f}€")
-st.metric("Break-even", f"{magic_number:,.0f}€")
+
+st.metric("Ticket Médio Receita", f"{ticket_medio_receita:,.0f}€")
+st.metric("Ticket Médio Despesa", f"{ticket_medio_despesa:,.0f}€")
+st.metric("Magic Number", f"{magic_number:,.0f}€")
 
 # ================= CLIENTES =================
-st.subheader("👥 Clientes: Novos vs Perdidos + Churn")
+st.subheader("👥 Evolução de Clientes")
 
 if not receitas.empty:
-    receitas = receitas.sort_values("Mes_num")
-
-    clientes_mes = receitas.groupby("Periodo")["Nome do cliente"].apply(set)
-    clientes_mes = clientes_mes.sort_index()
-
-    novos = []
-    perdidos = []
-    churn_lista = []
-
-    for i in range(len(clientes_mes)):
-        if i == 0:
-            novos.append(len(clientes_mes.iloc[i]))
-            perdidos.append(0)
-            churn_lista.append(0)
-        else:
-            atual = clientes_mes.iloc[i]
-            anterior = clientes_mes.iloc[i-1]
-
-            novos.append(len(atual - anterior))
-            perdidos.append(len(anterior - atual))
-
-            churn = (len(anterior - atual) / len(anterior))*100 if len(anterior)>0 else 0
-            churn_lista.append(churn)
-
-    df_clientes = pd.DataFrame({
-        "Novos": novos,
-        "Perdidos": perdidos,
-        "Churn (%)": churn_lista
-    }, index=clientes_mes.index)
-
-    st.dataframe(df_clientes)
+    clientes_por_mes = (
+        receitas.groupby(["Periodo", "ordem_mes"])["Nome do cliente"]
+        .nunique()
+        .reset_index()
+        .sort_values("ordem_mes")
+    )
 
     fig, ax = plt.subplots()
-    df_clientes[["Novos","Perdidos"]].plot(kind="bar", ax=ax)
-    ax.set_title("Clientes Novos vs Perdidos")
+    ax.plot(clientes_por_mes["Periodo"], clientes_por_mes["Nome do cliente"], marker="o")
+    plt.xticks(rotation=45)
     st.pyplot(fig)
 
-    fig2, ax2 = plt.subplots()
-    df_clientes["Churn (%)"].plot(ax=ax2, marker="o")
-    ax2.set_title("Churn (%)")
-    st.pyplot(fig2)
+# ================= MODALIDADE =================
+st.subheader("🏋️ Clientes por Modalidade")
 
-# ================= INSIGHTS =================
-def gerar_insights():
-    insights = []
+if not receitas.empty:
+    clientes_modalidade = receitas.groupby("Modalidade")["Nome do cliente"].nunique().sort_values(ascending=False)
+    st.dataframe(clientes_modalidade)
 
-    if receitas.empty:
-        return insights
+    fig_mod, ax_mod = plt.subplots()
+    clientes_modalidade.plot(kind="barh", ax=ax_mod)
+    st.pyplot(fig_mod)
 
-    clientes_por_mes = receitas.groupby("Periodo")["Nome do cliente"].nunique().sort_index()
+# ================= TABS =================
+tab1, tab2, tab3 = st.tabs(["📊 Visão Geral", "💰 Receitas", "💸 Despesas"])
 
-    churn_lista = []
+with tab2:
+    for cat in ["Modalidade", "Tipo", "Professor", "Local"]:
+        bloco = receitas.pivot_table(index=cat, columns="Periodo", values="Valor", aggfunc="sum", fill_value=0)
+        st.dataframe(bloco)
 
-    for i in range(1, len(clientes_por_mes)):
-        anterior = clientes_por_mes.iloc[i-1]
-        atual = clientes_por_mes.iloc[i]
+        fig = grafico_bar(bloco, f"Receitas por {cat}")
+        st.pyplot(fig)
 
-        if anterior > 0:
-            churn = ((anterior - atual) / anterior) * 100
-            churn_lista.append(churn)
-        else:
-            churn_lista.append(0)
+        capturar_grafico(fig, f"Receitas por {cat}", bloco)
 
-    if len(churn_lista) > 0 and churn_lista[-1] > 10:
-        insights.append(f"⚠️ Churn elevado no último mês: {churn_lista[-1]:.1f}%")
+with tab3:
+    for cat in ["Classe", "Local"]:
+        bloco = despesas.pivot_table(index=cat, columns="Periodo", values="Valor", aggfunc="sum", fill_value=0)
+        st.dataframe(bloco)
 
-    if margem < 10:
-        insights.append("⚠️ Margem baixa — risco operacional")
+        fig = grafico_bar(bloco, f"Despesas por {cat}")
+        st.pyplot(fig)
 
-    if ticket_medio_receita < ticket_medio_despesa:
-        insights.append("⚠️ Ticket médio abaixo do custo por cliente")
+        capturar_grafico(fig, f"Despesas por {cat}", bloco)
 
-    if not insights:
-        insights.append("✅ Negócio estável sem alertas críticos")
+# ================= EXPORT =================
+st.subheader("📄 Exportações")
 
-    return insights
-
-st.subheader("🧠 Insights Automáticos")
-for i in gerar_insights():
-    st.write(i)
-
-# ================= PDF =================
-def gerar_pdf():
+def gerar_pdf(figs):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
     elementos = []
 
-    elementos.append(Paragraph("Relatório Financeiro", styles["Title"]))
-    elementos.append(Spacer(1, 1*cm))
+    for titulo, fig, _ in figs:
+        elementos.append(Paragraph(titulo, styles["Heading2"]))
 
-    for i in gerar_insights():
-        elementos.append(Paragraph(i, styles["Normal"]))
+        img = BytesIO()
+        fig.savefig(img, format="png", bbox_inches="tight")
+        img.seek(0)
+
+        elementos.append(Image(img, width=16*cm, height=8*cm))
+        elementos.append(PageBreak())
 
     doc.build(elementos)
     buffer.seek(0)
     return buffer
 
-# ================= PPT =================
-def gerar_ppt():
+def gerar_ppt(figs):
     prs = Presentation()
 
-    slide = prs.slides.add_slide(prs.slide_layouts[1])
-    slide.shapes.title.text = "Resumo Executivo"
-    slide.placeholders[1].text = f"Receita: {receita_total:,.0f}€ | Lucro: {lucro_total:,.0f}€"
+    for titulo, _, pivot in figs:
+        slide = prs.slides.add_slide(prs.slide_layouts[5])
+        slide.shapes.title.text = titulo
+
+        chart_data = CategoryChartData()
+        chart_data.categories = list(pivot.index)
+
+        for col in pivot.columns:
+            chart_data.add_series(str(col), list(pivot[col].values))
+
+        slide.shapes.add_chart(
+            XL_CHART_TYPE.BAR_CLUSTERED,
+            Inches(1), Inches(2), Inches(8), Inches(4),
+            chart_data
+        )
 
     buffer = BytesIO()
     prs.save(buffer)
     buffer.seek(0)
     return buffer
 
-# ================= EXPORT =================
-st.subheader("📄 Exportações")
+col1, col2 = st.columns(2)
 
-if st.button("Gerar PDF Completo"):
-    st.download_button("Download PDF", gerar_pdf(), "relatorio.pdf")
+with col1:
+    if st.button("📄 Gerar PDF Completo"):
+        st.download_button("Download PDF", gerar_pdf(figs_pdf), "relatorio.pdf")
 
-if st.button("Gerar PPT Editável"):
-    st.download_button("Download PPT", gerar_ppt(), "relatorio.pptx")
+with col2:
+    if st.button("📊 Gerar PPT Editável"):
+        st.download_button("Download PPT", gerar_ppt(figs_pdf), "relatorio.pptx")
 
 # ================= FOOTER =================
 st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
