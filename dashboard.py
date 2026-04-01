@@ -8,7 +8,7 @@ import re
 import unicodedata
 
 # PDF
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Image, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
@@ -112,12 +112,10 @@ def ler_despesas(files):
 
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-# 🔥 FUNÇÃO CORRIGIDA (ROBUSTA)
+# ================= CLIENTES (ROBUSTO) =================
 @st.cache_data(ttl=3600)
 def ler_clientes(file):
     df = pd.read_excel(file)
-
-    # normalizar nomes das colunas
     df.columns = [normalizar(col) for col in df.columns]
 
     mapa_colunas = {
@@ -130,12 +128,8 @@ def ler_clientes(file):
 
     df = df.rename(columns=mapa_colunas)
 
-    if "Nome do cliente" not in df.columns:
-        st.error("❌ Coluna 'Nome do cliente' não encontrada")
-        return pd.DataFrame()
-
-    if "Data Inicio" not in df.columns:
-        st.error("❌ Coluna 'Data Inicio' não encontrada")
+    if "Nome do cliente" not in df.columns or "Data Inicio" not in df.columns:
+        st.warning("Ficheiro de clientes inválido")
         return pd.DataFrame()
 
     df["Nome do cliente"] = df["Nome do cliente"].apply(normalizar)
@@ -143,12 +137,20 @@ def ler_clientes(file):
 
     return df
 
-# ================= RESTO DO CÓDIGO =================
+# ================= GRÁFICOS =================
+def grafico_bar(df, titulo):
+    fig, ax = plt.subplots()
+    df.plot(kind="barh", ax=ax)
+    ax.set_title(titulo)
+    return fig
+
+# ================= EXPORT HELPERS =================
 figs_pdf = []
 
 def capturar_grafico(fig, titulo, pivot):
     figs_pdf.append((titulo, fig, pivot))
 
+# ================= UPLOAD =================
 st.sidebar.header("📤 Upload")
 uploaded_receitas = st.sidebar.file_uploader("Receitas", type=["xlsx"], accept_multiple_files=True)
 uploaded_despesas = st.sidebar.file_uploader("Despesas", type=["xlsx"], accept_multiple_files=True)
@@ -162,7 +164,19 @@ if uploaded_clientes and not receitas.empty:
     if not clientes_df.empty:
         receitas = receitas.merge(clientes_df, on="Nome do cliente", how="left")
 
-# KPIs
+# ================= FILTROS =================
+st.sidebar.header("🔎 Filtros")
+periodos = sorted(set(receitas.get("Periodo", [])).union(set(despesas.get("Periodo", []))))
+periodo_sel = st.sidebar.multiselect("Períodos", periodos, default=periodos)
+
+if not receitas.empty:
+    receitas = receitas[receitas["Periodo"].isin(periodo_sel)]
+
+if not despesas.empty:
+    despesas = despesas[despesas["Periodo"].isin(periodo_sel)]
+    despesas = despesas[despesas["Classe"] != "DEPOSITOS"]
+
+# ================= KPIs =================
 receita_total = receitas["Valor"].sum() if not receitas.empty else 0
 despesa_total = despesas["Valor"].sum() if not despesas.empty else 0
 lucro_total = receita_total + despesa_total
@@ -173,4 +187,111 @@ st.metric("Despesa", f"{despesa_total:,.0f}€")
 st.metric("Lucro", f"{lucro_total:,.0f}€")
 st.metric("Margem", f"{margem:.1f}%")
 
+# ================= CLIENTES =================
+st.subheader("👥 Evolução de Clientes")
+if not receitas.empty:
+    clientes_por_mes = (
+        receitas.groupby(["Periodo", "ordem_mes"])["Nome do cliente"]
+        .nunique()
+        .reset_index()
+        .sort_values("ordem_mes")
+    )
+
+    fig, ax = plt.subplots()
+    ax.plot(clientes_por_mes["Periodo"], clientes_por_mes["Nome do cliente"], marker="o")
+    plt.xticks(rotation=45)
+    st.pyplot(fig)
+
+# ================= MODALIDADE =================
+st.subheader("🏋️ Clientes por Modalidade")
+if not receitas.empty:
+    clientes_modalidade = receitas.groupby("Modalidade")["Nome do cliente"].nunique().sort_values(ascending=False)
+    st.dataframe(clientes_modalidade)
+
+    fig_mod, ax_mod = plt.subplots()
+    clientes_modalidade.plot(kind="barh", ax=ax_mod)
+    st.pyplot(fig_mod)
+
+# ================= TABS =================
+tab1, tab2, tab3 = st.tabs(["📊 Visão Geral", "💰 Receitas", "💸 Despesas"])
+
+with tab2:
+    for cat in ["Modalidade", "Tipo", "Professor", "Local"]:
+        bloco = receitas.pivot_table(index=cat, columns="Periodo", values="Valor", aggfunc="sum", fill_value=0)
+        st.dataframe(bloco)
+
+        fig = grafico_bar(bloco, f"Receitas por {cat}")
+        st.pyplot(fig)
+
+        capturar_grafico(fig, f"Receitas por {cat}", bloco)
+
+with tab3:
+    for cat in ["Classe", "Local"]:
+        bloco = despesas.pivot_table(index=cat, columns="Periodo", values="Valor", aggfunc="sum", fill_value=0)
+        st.dataframe(bloco)
+
+        fig = grafico_bar(bloco, f"Despesas por {cat}")
+        st.pyplot(fig)
+
+        capturar_grafico(fig, f"Despesas por {cat}", bloco)
+
+# ================= EXPORT =================
+st.subheader("📄 Exportações")
+
+def gerar_pdf(figs):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elementos = []
+
+    for titulo, fig, _ in figs:
+        elementos.append(Paragraph(titulo, styles["Heading2"]))
+
+        img = BytesIO()
+        fig.savefig(img, format="png", bbox_inches="tight")
+        img.seek(0)
+
+        elementos.append(Image(img, width=16*cm, height=8*cm))
+        elementos.append(PageBreak())
+
+    doc.build(elementos)
+    buffer.seek(0)
+    return buffer
+
+
+def gerar_ppt(figs):
+    prs = Presentation()
+
+    for titulo, _, pivot in figs:
+        slide = prs.slides.add_slide(prs.slide_layouts[5])
+        slide.shapes.title.text = titulo
+
+        chart_data = CategoryChartData()
+        chart_data.categories = list(pivot.index)
+
+        for col in pivot.columns:
+            chart_data.add_series(str(col), list(pivot[col].values))
+
+        slide.shapes.add_chart(
+            XL_CHART_TYPE.BAR_CLUSTERED,
+            Inches(1), Inches(2), Inches(8), Inches(4),
+            chart_data
+        )
+
+    buffer = BytesIO()
+    prs.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("📄 Gerar PDF Completo"):
+        st.download_button("Download PDF", gerar_pdf(figs_pdf), "relatorio.pdf")
+
+with col2:
+    if st.button("📊 Gerar PPT Editável"):
+        st.download_button("Download PPT", gerar_ppt(figs_pdf), "relatorio.pptx")
+
+# ================= FOOTER =================
 st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
