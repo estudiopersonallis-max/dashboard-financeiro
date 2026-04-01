@@ -53,6 +53,23 @@ def ler_despesas(files):
         dfs.append(df)
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
+# ================= GRÁFICOS =================
+def grafico_bar(df, titulo):
+    fig, ax = plt.subplots()
+    df.plot(kind="barh", ax=ax)
+    ax.set_title(titulo)
+    ax.set_xlabel("€")
+    return fig
+
+
+def grafico_percentual(df, titulo):
+    percent = df.div(df.sum(axis=0), axis=1) * 100
+    fig, ax = plt.subplots()
+    percent.plot(kind="barh", ax=ax)
+    ax.set_title(titulo + " (%)")
+    ax.set_xlabel("%")
+    return fig
+
 # ================= UPLOAD =================
 st.sidebar.header("📤 Upload")
 uploaded_receitas = st.sidebar.file_uploader("Receitas", type=["xlsx"], accept_multiple_files=True)
@@ -60,6 +77,18 @@ uploaded_despesas = st.sidebar.file_uploader("Despesas", type=["xlsx"], accept_m
 
 receitas = ler_receitas(uploaded_receitas) if uploaded_receitas else pd.DataFrame()
 despesas = ler_despesas(uploaded_despesas) if uploaded_despesas else pd.DataFrame()
+
+# ================= FILTROS =================
+st.sidebar.header("🔎 Filtros")
+periodos = sorted(set(receitas.get("Periodo", [])).union(set(despesas.get("Periodo", []))))
+periodo_sel = st.sidebar.multiselect("Períodos", periodos, default=periodos)
+
+if not receitas.empty:
+    receitas = receitas[receitas["Periodo"].isin(periodo_sel)]
+
+if not despesas.empty:
+    despesas = despesas[despesas["Periodo"].isin(periodo_sel)]
+    despesas = despesas[despesas["Classe"] != "DEPÓSITOS"]
 
 # ================= KPIs =================
 receita_total = receitas["Valor"].sum() if not receitas.empty else 0
@@ -75,26 +104,48 @@ ticket_medio_despesa = abs(despesa_total) / linhas_despesa if linhas_despesa els
 
 magic_number = abs(despesa_total)
 
-# ================= SIMULADOR =================
-clientes_para_break_even = (magic_number / ticket_medio_receita) if ticket_medio_receita else 0
-
-aumento_ticket_10 = ticket_medio_receita * 1.1
-novo_lucro_ticket = aumento_ticket_10 * clientes_unicos + despesa_total
-
-reducao_custo_10 = despesa_total * 0.9
-novo_lucro_custo = receita_total + reducao_custo_10
-
 st.metric("Receita", f"{receita_total:,.0f}€")
+st.metric("Despesa", f"{despesa_total:,.0f}€")
 st.metric("Lucro", f"{lucro_total:,.0f}€")
 st.metric("Margem", f"{margem:.1f}%")
 
-st.metric("Ticket Médio", f"{ticket_medio_receita:,.0f}€")
-st.metric("Break-even", f"{magic_number:,.0f}€")
+st.metric("Ticket Médio Receita", f"{ticket_medio_receita:,.0f}€")
+st.metric("Ticket Médio Despesa", f"{ticket_medio_despesa:,.0f}€")
+st.metric("Magic Number (Break-even)", f"{magic_number:,.0f}€")
 
-st.subheader("🧠 Simulador")
-st.write(f"Clientes necessários para break-even: {clientes_para_break_even:.0f}")
-st.write(f"Lucro com +10% ticket: {novo_lucro_ticket:,.0f}€")
-st.write(f"Lucro com -10% custo: {novo_lucro_custo:,.0f}€")
+# ================= BLOCO ANALISE =================
+def bloco_analise(df, categoria, titulo, figs_pdf):
+    if df.empty or categoria not in df.columns:
+        return
+
+    pivot = df.pivot_table(index=categoria, columns="Periodo", values="Valor", aggfunc="sum", fill_value=0)
+
+    st.markdown(f"### {titulo} por {categoria}")
+    st.dataframe(pivot)
+
+    fig1 = grafico_bar(pivot, f"{titulo} por {categoria}")
+    st.pyplot(fig1)
+
+    fig2 = grafico_percentual(pivot, f"{titulo} por {categoria}")
+    st.pyplot(fig2)
+
+    figs_pdf.append((f"{titulo} - {categoria}", fig1, fig2, pivot))
+
+# ================= TABS =================
+figs_pdf = []
+
+tab1, tab2, tab3 = st.tabs(["📊 Visão Geral", "💰 Receitas", "💸 Despesas"])
+
+with tab1:
+    st.write(f"Receita: {receita_total:,.0f}€, Lucro: {lucro_total:,.0f}€, Margem: {margem:.1f}%, Ticket Médio: {ticket_medio_receita:,.0f}€, Break-even: {magic_number:,.0f}€")
+
+with tab2:
+    for cat in ["Modalidade", "Tipo", "Professor", "Local"]:
+        bloco_analise(receitas, cat, "Receitas", figs_pdf)
+
+with tab3:
+    for cat in ["Classe", "Local"]:
+        bloco_analise(despesas, cat, "Despesas", figs_pdf)
 
 # ================= PPT EDITÁVEL =================
 def gerar_ppt():
@@ -104,17 +155,18 @@ def gerar_ppt():
     slide.shapes.title.text = "Resumo Executivo"
     slide.placeholders[1].text = f"Receita: {receita_total:,.0f}€ | Lucro: {lucro_total:,.0f}€"
 
-    if not receitas.empty:
-        dados = receitas.groupby("Modalidade")["Valor"].sum()
-        chart_data = CategoryChartData()
-        chart_data.categories = list(dados.index)
-        chart_data.add_series('Receita', list(dados.values))
-
+    for titulo, fig1, fig2, pivot in figs_pdf:
         slide = prs.slides.add_slide(prs.slide_layouts[5])
-        slide.shapes.title.text = "Receita por Modalidade"
+        slide.shapes.title.text = titulo
+
+        chart_data = CategoryChartData()
+        chart_data.categories = list(pivot.index)
+
+        for col in pivot.columns:
+            chart_data.add_series(str(col), list(pivot[col].values))
 
         slide.shapes.add_chart(
-            XL_CHART_TYPE.COLUMN_CLUSTERED,
+            XL_CHART_TYPE.BAR_CLUSTERED,
             Inches(1), Inches(2), Inches(8), Inches(4),
             chart_data
         )
