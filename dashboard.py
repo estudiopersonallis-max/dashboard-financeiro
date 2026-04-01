@@ -179,8 +179,15 @@ def gerar_ppt():
 # ================= EXPORT =================
 st.subheader("📄 Exportações")
 
+# PDF COMPLETO (mantido como antes)
+if st.button("Gerar PDF Completo"):
+    pdf = gerar_pdf(figs_pdf)
+    st.download_button("Download PDF", pdf, "relatorio_completo.pdf")
+
+# PPT EDITÁVEL
 if st.button("Gerar PPT Editável"):
     st.download_button("Download PPT", gerar_ppt(), "apresentacao_editavel.pptx")
 
 # ================= FOOTER =================
+st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
 st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
