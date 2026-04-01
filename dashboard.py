@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 from io import BytesIO
 from datetime import datetime
 
@@ -52,7 +53,6 @@ def grafico_bar(df, titulo):
     fig, ax = plt.subplots()
     df.plot(kind="barh", ax=ax)
     ax.set_title(titulo)
-    ax.set_xlabel("€")
     return fig
 
 
@@ -61,7 +61,33 @@ def grafico_percentual(df, titulo):
     fig, ax = plt.subplots()
     percent.plot(kind="barh", ax=ax)
     ax.set_title(titulo + " (%)")
-    ax.set_xlabel("%")
+    return fig
+
+
+def grafico_pareto(series, titulo):
+    series = series.sort_values(ascending=False)
+    cum = series.cumsum() / series.sum() * 100
+    fig, ax = plt.subplots()
+    series.plot(kind="bar", ax=ax)
+    cum.plot(ax=ax, secondary_y=True)
+    ax.set_title(titulo + " (Pareto)")
+    return fig
+
+
+def grafico_heatmap(df, titulo):
+    fig, ax = plt.subplots()
+    cax = ax.imshow(df, aspect='auto')
+    ax.set_title(titulo)
+    fig.colorbar(cax)
+    return fig
+
+
+def grafico_waterfall(receita, despesa):
+    fig, ax = plt.subplots()
+    valores = [receita, despesa, receita+despesa]
+    labels = ["Receita", "Custos", "Lucro"]
+    ax.bar(labels, valores)
+    ax.set_title("Waterfall Lucro")
     return fig
 
 # ================= UPLOAD =================
@@ -71,18 +97,6 @@ uploaded_despesas = st.sidebar.file_uploader("Despesas", type=["xlsx"], accept_m
 
 receitas = ler_receitas(uploaded_receitas) if uploaded_receitas else pd.DataFrame()
 despesas = ler_despesas(uploaded_despesas) if uploaded_despesas else pd.DataFrame()
-
-# ================= FILTROS =================
-st.sidebar.header("🔎 Filtros")
-periodos = sorted(set(receitas.get("Periodo", [])).union(set(despesas.get("Periodo", []))))
-periodo_sel = st.sidebar.multiselect("Períodos", periodos, default=periodos)
-
-if not receitas.empty:
-    receitas = receitas[receitas["Periodo"].isin(periodo_sel)]
-
-if not despesas.empty:
-    despesas = despesas[despesas["Periodo"].isin(periodo_sel)]
-    despesas = despesas[despesas["Classe"] != "DEPÓSITOS"]
 
 # ================= KPIs =================
 receita_total = receitas["Valor"].sum() if not receitas.empty else 0
@@ -95,83 +109,87 @@ st.metric("Despesa", f"{despesa_total:,.0f}€")
 st.metric("Lucro", f"{lucro_total:,.0f}€")
 st.metric("Margem", f"{margem:.1f}%")
 
-# ================= BLOCO ANALISE =================
-def bloco_analise(df, categoria, titulo, figs_pdf):
-    if df.empty or categoria not in df.columns:
-        return
+# ================= INSIGHTS =================
+def gerar_insights():
+    insights = []
+    if margem < 10:
+        insights.append("Margem pressionada indica necessidade de revisão de custos.")
+    if lucro_total < 0:
+        insights.append("Operação deficitária requer ação imediata.")
+    return insights
 
-    pivot = df.pivot_table(index=categoria, columns="Periodo", values="Valor", aggfunc="sum", fill_value=0)
 
-    st.markdown(f"### {titulo} por {categoria}")
-    st.dataframe(pivot)
+def gerar_problemas():
+    problemas = []
+    if margem < 10:
+        problemas.append("Baixa rentabilidade")
+    if lucro_total < 0:
+        problemas.append("Prejuízo operacional")
+    return problemas[:3]
 
-    fig1 = grafico_bar(pivot, f"{titulo} por {categoria}")
-    st.pyplot(fig1)
 
-    fig2 = grafico_percentual(pivot, f"{titulo} por {categoria}")
-    st.pyplot(fig2)
+def gerar_oportunidades():
+    oportunidades = []
+    if margem > 20:
+        oportunidades.append("Escalar operação atual")
+    if not receitas.empty:
+        oportunidades.append("Explorar clientes top")
+    return oportunidades[:3]
 
-    figs_pdf.append((f"{titulo} - {categoria}", fig1, fig2))
+st.subheader("🧠 Insights")
+for i in gerar_insights():
+    st.write("•", i)
 
-# ================= TABS =================
-figs_pdf = []
+st.subheader("🚨 Problemas")
+for p in gerar_problemas():
+    st.write("•", p)
 
-tab1, tab2, tab3 = st.tabs(["📊 Visão Geral", "💰 Receitas", "💸 Despesas"])
+st.subheader("🚀 Oportunidades")
+for o in gerar_oportunidades():
+    st.write("•", o)
 
-with tab1:
-    if not receitas.empty or not despesas.empty:
-        df_kpis = pd.DataFrame({
-            "Receita": [receita_total],
-            "Despesa": [despesa_total],
-            "Lucro": [lucro_total]
-        })
-        fig = grafico_bar(df_kpis.T, "Resumo Financeiro")
-        st.pyplot(fig)
-        figs_pdf.append(("Resumo", fig, None))
+# ================= GRÁFICOS EXECUTIVOS =================
+st.subheader("📊 Análises Executivas")
 
-with tab2:
-    for cat in ["Modalidade", "Tipo", "Professor", "Local"]:
-        bloco_analise(receitas, cat, "Receitas", figs_pdf)
+if not receitas.empty:
+    serie = receitas.groupby("Nome do cliente")["Valor"].sum()
+    st.pyplot(grafico_pareto(serie, "Clientes"))
 
-with tab3:
-    for cat in ["Classe", "Local"]:
-        bloco_analise(despesas, cat, "Despesas", figs_pdf)
+if not receitas.empty:
+    pivot = receitas.pivot_table(index="Modalidade", columns="Periodo", values="Valor", aggfunc="sum", fill_value=0)
+    st.pyplot(grafico_heatmap(pivot, "Heatmap Receitas"))
 
-# ================= PDF COMPLETO =================
-def gerar_pdf(figs_pdf):
+st.pyplot(grafico_waterfall(receita_total, despesa_total))
+
+# ================= PDF =================
+def gerar_pdf():
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
     elementos = []
 
-    elementos.append(Paragraph("RELATÓRIO COMPLETO", styles["Title"]))
+    elementos.append(Paragraph("RELATÓRIO EXECUTIVO", styles["Title"]))
     elementos.append(Spacer(1, 1*cm))
 
-    for titulo, fig1, fig2 in figs_pdf:
-        elementos.append(Paragraph(titulo, styles["Heading2"]))
+    elementos.append(Paragraph("Sumário Executivo", styles["Heading2"]))
+    elementos.append(Paragraph(f"Receita: {receita_total:,.0f}€, Lucro: {lucro_total:,.0f}€, Margem: {margem:.1f}%", styles["Normal"]))
 
-        if fig1:
-            img = BytesIO()
-            fig1.savefig(img, format="png", bbox_inches="tight")
-            img.seek(0)
-            elementos.append(Image(img, width=16*cm, height=8*cm))
+    elementos.append(Spacer(1, 1*cm))
 
-        if fig2:
-            img2 = BytesIO()
-            fig2.savefig(img2, format="png", bbox_inches="tight")
-            img2.seek(0)
-            elementos.append(Image(img2, width=16*cm, height=8*cm))
+    elementos.append(Paragraph("Insights", styles["Heading2"]))
+    for i in gerar_insights():
+        elementos.append(Paragraph(i, styles["Normal"]))
 
-        elementos.append(PageBreak())
+    elementos.append(PageBreak())
 
     doc.build(elementos)
     buffer.seek(0)
     return buffer
 
-st.subheader("📄 Exportar PDF Completo")
-if st.button("Gerar PDF Completo"):
-    pdf = gerar_pdf(figs_pdf)
-    st.download_button("Download PDF", pdf, "relatorio_completo.pdf")
+st.subheader("📄 Exportar PDF Executivo")
+if st.button("Gerar PDF"):
+    pdf = gerar_pdf()
+    st.download_button("Download", pdf, "relatorio_executivo.pdf")
 
 # ================= FOOTER =================
 st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
