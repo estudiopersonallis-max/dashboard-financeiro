@@ -1,3 +1,4 @@
+# ================= IMPORTS =================
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -60,7 +61,7 @@ def extrair_mes(nome):
     return 99
 
 # ================= LEITURA =================
-@st.cache_data
+@st.cache_data(ttl=3600)
 def ler_receitas(files):
     dfs = []
     for f in files:
@@ -90,7 +91,7 @@ def ler_receitas(files):
 
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-@st.cache_data
+@st.cache_data(ttl=3600)
 def ler_despesas(files):
     dfs = []
     for f in files:
@@ -114,12 +115,21 @@ def ler_despesas(files):
 
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-# ================= GRÁFICOS =================
+# ================= FUNÇÕES AUX =================
 def grafico_bar(df, titulo):
     fig, ax = plt.subplots()
     df.plot(kind="barh", ax=ax)
     ax.set_title(titulo)
     return fig
+
+def gerar_pivot(df, index):
+    return df.pivot_table(
+        index=index,
+        columns="Periodo",
+        values="Valor",
+        aggfunc="sum",
+        fill_value=0
+    )
 
 # ================= EXPORT HELPERS =================
 figs_pdf = []
@@ -162,18 +172,63 @@ ticket_medio_despesa = abs(despesa_media) / clientes_ativos_media if clientes_at
 
 magic_number = abs(despesa_media)
 
-st.metric("Receita", f"{receita_total:,.0f}€")
-st.metric("Despesa", f"{despesa_total:,.0f}€")
-st.metric("Lucro", f"{lucro_total:,.0f}€")
-st.metric("Margem", f"{margem:.1f}%")
+cac = abs(despesa_media) / clientes_ativos_media if clientes_ativos_media else 0
+ltv = ticket_medio_receita * 6 if ticket_medio_receita else 0
+ltv_cac = (ltv / cac) if cac else 0
 
-st.metric("Ticket Médio Receita", f"{ticket_medio_receita:,.0f}€")
-st.metric("Ticket Médio Despesa", f"{ticket_medio_despesa:,.0f}€")
-st.metric("Magic Number", f"{magic_number:,.0f}€")
+# KPIs em colunas
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Receita", f"{receita_total:,.0f}€")
+col2.metric("Despesa", f"{despesa_total:,.0f}€")
+col3.metric("Lucro", f"{lucro_total:,.0f}€")
+col4.metric("Margem", f"{margem:.1f}%")
+
+col5, col6, col7, col8 = st.columns(4)
+col5.metric("Ticket Receita", f"{ticket_medio_receita:,.0f}€")
+col6.metric("Ticket Despesa", f"{ticket_medio_despesa:,.0f}€")
+col7.metric("CAC", f"{cac:,.0f}€")
+col8.metric("LTV/CAC", f"{ltv_cac:.2f}")
+
+# ================= ALERTAS =================
+st.subheader("⚠️ Alertas Inteligentes")
+if margem < 20:
+    st.warning("Margem abaixo de 20%")
+if despesa_total < -receita_total * 0.8:
+    st.warning("Despesas muito altas")
+if clientes_ativos_media < 10:
+    st.warning("Poucos clientes ativos")
+
+# ================= EVOLUÇÃO FINANCEIRA =================
+st.subheader("📈 Evolução Financeira")
+if not receitas.empty and not despesas.empty:
+    receita_mes = receitas.groupby("Periodo")["Valor"].sum()
+    despesa_mes = despesas.groupby("Periodo")["Valor"].sum()
+
+    df_fin = pd.DataFrame({
+        "Receita": receita_mes,
+        "Despesa": despesa_mes
+    }).fillna(0)
+
+    df_fin["Lucro"] = df_fin["Receita"] + df_fin["Despesa"]
+
+    fig, ax = plt.subplots()
+    df_fin.plot(ax=ax, marker="o")
+    plt.xticks(rotation=45)
+    st.pyplot(fig)
+
+# ================= TOP CLIENTES =================
+st.subheader("🏆 Top Clientes")
+if not receitas.empty:
+    top_clientes = (
+        receitas.groupby("Nome do cliente")["Valor"]
+        .sum()
+        .sort_values(ascending=False)
+        .head(10)
+    )
+    st.dataframe(top_clientes)
 
 # ================= CLIENTES =================
 st.subheader("👥 Evolução de Clientes")
-
 if not receitas.empty:
     clientes_por_mes = (
         receitas.groupby(["Periodo", "ordem_mes"])["Nome do cliente"]
@@ -189,7 +244,6 @@ if not receitas.empty:
 
 # ================= MODALIDADE =================
 st.subheader("🏋️ Clientes por Modalidade")
-
 if not receitas.empty:
     clientes_modalidade = receitas.groupby("Modalidade")["Nome do cliente"].nunique().sort_values(ascending=False)
     st.dataframe(clientes_modalidade)
@@ -203,7 +257,7 @@ tab1, tab2, tab3 = st.tabs(["📊 Visão Geral", "💰 Receitas", "💸 Despesas
 
 with tab2:
     for cat in ["Modalidade", "Tipo", "Professor", "Local"]:
-        bloco = receitas.pivot_table(index=cat, columns="Periodo", values="Valor", aggfunc="sum", fill_value=0)
+        bloco = gerar_pivot(receitas, cat)
         st.dataframe(bloco)
 
         fig = grafico_bar(bloco, f"Receitas por {cat}")
@@ -213,7 +267,7 @@ with tab2:
 
 with tab3:
     for cat in ["Classe", "Local"]:
-        bloco = despesas.pivot_table(index=cat, columns="Periodo", values="Valor", aggfunc="sum", fill_value=0)
+        bloco = gerar_pivot(despesas, cat)
         st.dataframe(bloco)
 
         fig = grafico_bar(bloco, f"Despesas por {cat}")
@@ -243,6 +297,7 @@ def gerar_pdf(figs):
     doc.build(elementos)
     buffer.seek(0)
     return buffer
+
 
 def gerar_ppt(figs):
     prs = Presentation()
