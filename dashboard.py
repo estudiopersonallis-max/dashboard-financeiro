@@ -47,6 +47,23 @@ def ler_despesas(files):
         dfs.append(df)
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
+# ================= FUNÇÕES GRÁFICOS =================
+def grafico_bar(df, titulo):
+    fig, ax = plt.subplots()
+    df.plot(kind="barh", ax=ax)
+    ax.set_title(titulo)
+    ax.set_xlabel("€")
+    return fig
+
+
+def grafico_percentual(df, titulo):
+    percent = df.div(df.sum(axis=0), axis=1) * 100
+    fig, ax = plt.subplots()
+    percent.plot(kind="barh", ax=ax)
+    ax.set_title(titulo + " (%)")
+    ax.set_xlabel("%")
+    return fig
+
 # ================= UPLOAD =================
 st.sidebar.header("📤 Upload")
 uploaded_receitas = st.sidebar.file_uploader("Receitas", type=["xlsx"], accept_multiple_files=True)
@@ -70,169 +87,91 @@ if not despesas.empty:
 # ================= KPIs =================
 receita_total = receitas["Valor"].sum() if not receitas.empty else 0
 despesa_total = despesas["Valor"].sum() if not despesas.empty else 0
-lucro_total = receita_total + despesa_total  # despesas já negativas
+lucro_total = receita_total + despesa_total
 margem = (lucro_total / receita_total * 100) if receita_total else 0
 
-# estratégicos
-ticket_medio = receitas["Valor"].mean() if not receitas.empty else 0
-custo_ratio = abs(despesa_total) / receita_total * 100 if receita_total else 0
+st.metric("Receita", f"{receita_total:,.0f}€")
+st.metric("Despesa", f"{despesa_total:,.0f}€")
+st.metric("Lucro", f"{lucro_total:,.0f}€")
+st.metric("Margem", f"{margem:.1f}%")
 
-concentracao_top5 = 0
-if not receitas.empty:
-    top = receitas.groupby("Nome do cliente")["Valor"].sum()
-    concentracao_top5 = top.nlargest(5).sum() / top.sum() * 100 if top.sum() else 0
-
-col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("Receita", f"{receita_total:,.0f}€")
-col2.metric("Despesa", f"{despesa_total:,.0f}€")
-col3.metric("Lucro", f"{lucro_total:,.0f}€")
-col4.metric("Margem", f"{margem:.1f}%")
-col5.metric("Ticket Médio", f"{ticket_medio:,.0f}€")
-
-col6, col7 = st.columns(2)
-col6.metric("Custo/Receita", f"{custo_ratio:.1f}%")
-col7.metric("Concentração Top 5", f"{concentracao_top5:.1f}%")
-
-# ================= KPIs POR PERÍODO =================
-kpis = []
-for p in periodos:
-    r = receitas[receitas["Periodo"] == p]
-    d = despesas[despesas["Periodo"] == p]
-    receita = r["Valor"].sum()
-    despesa = d["Valor"].sum()
-    lucro = receita + despesa
-    kpis.append({"Período": p, "Receita": receita, "Despesa": despesa, "Lucro": lucro})
-
-df_kpis = pd.DataFrame(kpis)
-
-if not df_kpis.empty:
-    df_kpis["Margem (%)"] = (df_kpis["Lucro"] / df_kpis["Receita"]) * 100
-    df_kpis["Δ Receita (%)"] = df_kpis["Receita"].pct_change() * 100
-    df_kpis["Δ Lucro (%)"] = df_kpis["Lucro"].pct_change() * 100
-    st.dataframe(df_kpis.round(2), use_container_width=True)
-
-# ================= FUNÇÕES =================
-def grafico_bar(df, titulo):
-    if df.empty:
-        return None
-    df = df.loc[df.sum(axis=1).sort_values(ascending=False).index]
-    fig, ax = plt.subplots()
-    df.plot(kind="barh", ax=ax)
-    ax.set_title(titulo)
-    ax.set_xlabel("€")
-    return fig
-
-
-def bloco_analise(df, categoria, titulo):
+# ================= BLOCO ANALISE =================
+def bloco_analise(df, categoria, titulo, figs_pdf):
     if df.empty or categoria not in df.columns:
-        return None
+        return
+
     pivot = df.pivot_table(index=categoria, columns="Periodo", values="Valor", aggfunc="sum", fill_value=0)
-    percent = pivot.div(pivot.sum(axis=0), axis=1) * 100
 
     st.markdown(f"### {titulo} por {categoria}")
-    tabela = pivot.round(2).astype(str) + " € | " + percent.round(1).astype(str) + " %"
-    st.dataframe(tabela, use_container_width=True)
+    st.dataframe(pivot)
 
-    fig = grafico_bar(pivot, f"{titulo} por {categoria}")
-    if fig:
-        st.pyplot(fig)
-    return fig
+    fig1 = grafico_bar(pivot, f"{titulo} por {categoria}")
+    st.pyplot(fig1)
+
+    fig2 = grafico_percentual(pivot, f"{titulo} por {categoria}")
+    st.pyplot(fig2)
+
+    figs_pdf.append((f"{titulo} - {categoria}", fig1, fig2))
 
 # ================= TABS =================
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Visão Geral", "💰 Receitas", "💸 Despesas", "🧠 Drivers"])
+figs_pdf = []
+
+tab1, tab2, tab3 = st.tabs(["📊 Visão Geral", "💰 Receitas", "💸 Despesas"])
 
 with tab1:
-    st.subheader("Resumo Financeiro")
-    fig_resumo = None
-    if not df_kpis.empty:
-        fig_resumo, ax = plt.subplots()
-        df_kpis.set_index("Período")[["Receita", "Despesa", "Lucro"]].plot(kind="bar", ax=ax)
-        st.pyplot(fig_resumo)
+    if not receitas.empty or not despesas.empty:
+        df_kpis = pd.DataFrame({
+            "Receita": [receita_total],
+            "Despesa": [despesa_total],
+            "Lucro": [lucro_total]
+        })
+        fig = grafico_bar(df_kpis.T, "Resumo Financeiro")
+        st.pyplot(fig)
+        figs_pdf.append(("Resumo", fig, None))
 
 with tab2:
     for cat in ["Modalidade", "Tipo", "Professor", "Local"]:
-        bloco_analise(receitas, cat, "Receitas")
+        bloco_analise(receitas, cat, "Receitas", figs_pdf)
 
 with tab3:
     for cat in ["Classe", "Local"]:
-        bloco_analise(despesas, cat, "Despesas")
+        bloco_analise(despesas, cat, "Despesas", figs_pdf)
 
-with tab4:
-    st.subheader("Drivers do Negócio")
-    if not receitas.empty:
-        st.write("Top Professores")
-        st.bar_chart(receitas.groupby("Professor")["Valor"].sum().sort_values(ascending=False).head(10))
-    if not receitas.empty:
-        st.write("Top Modalidades")
-        st.bar_chart(receitas.groupby("Modalidade")["Valor"].sum().sort_values(ascending=False))
-
-# ================= ALERTAS =================
-alertas = []
-if margem < 10:
-    alertas.append("Margem baixa (<10%)")
-if not df_kpis.empty and (df_kpis["Lucro"] < 0).any():
-    alertas.append("Períodos com prejuízo")
-if concentracao_top5 > 50:
-    alertas.append("Alta dependência de poucos clientes")
-if custo_ratio > 80:
-    alertas.append("Estrutura de custos elevada")
-if receita_total > 0 and lucro_total < 0:
-    alertas.append("Crescimento sem lucro")
-
-if alertas:
-    st.warning("\n".join([f"⚠️ {a}" for a in alertas]))
-
-# ================= SCORE =================
-score = 0
-if margem > 20: score += 1
-if lucro_total > 0: score += 1
-if custo_ratio < 70: score += 1
-if concentracao_top5 < 50: score += 1
-
-st.subheader("🏥 Saúde do Negócio")
-st.metric("Score", f"{score}/4")
-
-# ================= PDF =================
-def gerar_pdf(df_kpis, receitas, despesas, fig_resumo):
+# ================= PDF COMPLETO =================
+def gerar_pdf(figs_pdf):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
     elementos = []
 
-    elementos.append(Paragraph("RELATÓRIO FINANCEIRO", styles["Title"]))
+    elementos.append(Paragraph("RELATÓRIO COMPLETO", styles["Title"]))
     elementos.append(Spacer(1, 1*cm))
 
-    if not df_kpis.empty:
-        tabela = [["Período", "Receita", "Despesa", "Lucro", "Margem"]]
-        for _, row in df_kpis.iterrows():
-            tabela.append([
-                row["Período"],
-                f"{row['Receita']:,.0f}€",
-                f"{row['Despesa']:,.0f}€",
-                f"{row['Lucro']:,.0f}€",
-                f"{row['Margem (%)']:.1f}%"
-            ])
-        elementos.append(Table(tabela))
+    for titulo, fig1, fig2 in figs_pdf:
+        elementos.append(Paragraph(titulo, styles["Heading2"]))
 
-    if fig_resumo:
-        img = BytesIO()
-        fig_resumo.savefig(img, format="png", bbox_inches="tight")
-        img.seek(0)
-        elementos.append(Image(img, width=16*cm, height=9*cm))
+        if fig1:
+            img = BytesIO()
+            fig1.savefig(img, format="png", bbox_inches="tight")
+            img.seek(0)
+            elementos.append(Image(img, width=16*cm, height=8*cm))
+
+        if fig2:
+            img2 = BytesIO()
+            fig2.savefig(img2, format="png", bbox_inches="tight")
+            img2.seek(0)
+            elementos.append(Image(img2, width=16*cm, height=8*cm))
+
+        elementos.append(PageBreak())
 
     doc.build(elementos)
     buffer.seek(0)
     return buffer
 
-st.subheader("📄 Exportar PDF")
-if st.button("Gerar Relatório PDF"):
-    pdf = gerar_pdf(df_kpis, receitas, despesas, fig_resumo)
-    st.download_button(
-        label="📥 Download PDF",
-        data=pdf,
-        file_name="relatorio_financeiro.pdf",
-        mime="application/pdf"
-    )
+st.subheader("📄 Exportar PDF Completo")
+if st.button("Gerar PDF Completo"):
+    pdf = gerar_pdf(figs_pdf)
+    st.download_button("Download PDF", pdf, "relatorio_completo.pdf")
 
 # ================= FOOTER =================
 st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
