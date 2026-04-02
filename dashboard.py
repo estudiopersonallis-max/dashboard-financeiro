@@ -115,33 +115,6 @@ def ler_despesas(files):
 
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-# ================= NOVO: CLIENTES =================
-@st.cache_data(ttl=3600)
-def ler_clientes(file):
-    if not file:
-        return pd.DataFrame()
-
-    df = pd.read_excel(file)
-
-    df["Nome do cliente"] = df.get("Nome do cliente", "").apply(normalizar)
-
-    possible_cols = ["Data Inicio", "Data Início", "Inicio", "Start", "Data"]
-    col_data = None
-
-    for col in possible_cols:
-        if col in df.columns:
-            col_data = col
-            break
-
-    if not col_data:
-        st.warning("Coluna de data de início não encontrada")
-        return pd.DataFrame()
-
-    df["Data Inicio"] = pd.to_datetime(df[col_data], errors="coerce")
-    df = df.dropna(subset=["Nome do cliente", "Data Inicio"])
-
-    return df[["Nome do cliente", "Data Inicio"]]
-
 # ================= FUNÇÕES AUX =================
 def grafico_bar(df, titulo):
     fig, ax = plt.subplots()
@@ -168,11 +141,9 @@ def capturar_grafico(fig, titulo, pivot):
 st.sidebar.header("📤 Upload")
 uploaded_receitas = st.sidebar.file_uploader("Receitas", type=["xlsx"], accept_multiple_files=True)
 uploaded_despesas = st.sidebar.file_uploader("Despesas", type=["xlsx"], accept_multiple_files=True)
-uploaded_clientes = st.sidebar.file_uploader("Clientes (Data Início)", type=["xlsx"])
 
 receitas = ler_receitas(uploaded_receitas) if uploaded_receitas else pd.DataFrame()
 despesas = ler_despesas(uploaded_despesas) if uploaded_despesas else pd.DataFrame()
-clientes_df = ler_clientes(uploaded_clientes) if uploaded_clientes else pd.DataFrame()
 
 # ================= FILTROS =================
 st.sidebar.header("🔎 Filtros")
@@ -197,38 +168,15 @@ despesa_media = despesas.groupby("Periodo")["Valor"].sum().mean() if not despesa
 clientes_ativos_media = receitas.groupby("Periodo")["Nome do cliente"].nunique().mean() if not receitas.empty else 0
 
 ticket_medio_receita = receita_media / clientes_ativos_media if clientes_ativos_media else 0
+ticket_medio_despesa = abs(despesa_media) / clientes_ativos_media if clientes_ativos_media else 0
 
-# ================= LTV REAL =================
-if not receitas.empty and not clientes_df.empty:
-    df_ltv = receitas.merge(clientes_df, on="Nome do cliente", how="left")
+magic_number = abs(despesa_media)
 
-    ultima_data = datetime.now()
-
-    df_ltv["meses_vida"] = (
-        (ultima_data - df_ltv["Data Inicio"]).dt.days / 30
-    )
-
-    vida_media = (
-        df_ltv.groupby("Nome do cliente")["meses_vida"]
-        .mean()
-        .mean()
-    )
-else:
-    vida_media = 0
-
-ltv = ticket_medio_receita * vida_media if vida_media else 0
-
-# ================= CAC MELHORADO =================
-despesas_marketing = despesas[despesas["Classe"].isin(["MARKETING", "COMERCIAL"]) ]
-
-cac = (
-    abs(despesas_marketing["Valor"].sum()) / receitas["Nome do cliente"].nunique()
-    if not despesas_marketing.empty else 0
-)
-
+cac = abs(despesa_media) / clientes_ativos_media if clientes_ativos_media else 0
+ltv = ticket_medio_receita * 6 if ticket_medio_receita else 0
 ltv_cac = (ltv / cac) if cac else 0
 
-# ================= KPIs UI =================
+# KPIs em colunas
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Receita", f"{receita_total:,.0f}€")
 col2.metric("Despesa", f"{despesa_total:,.0f}€")
@@ -237,16 +185,153 @@ col4.metric("Margem", f"{margem:.1f}%")
 
 col5, col6, col7, col8 = st.columns(4)
 col5.metric("Ticket Receita", f"{ticket_medio_receita:,.0f}€")
-col6.metric("CAC", f"{cac:,.0f}€")
-col7.metric("LTV", f"{ltv:,.0f}€")
+col6.metric("Ticket Despesa", f"{ticket_medio_despesa:,.0f}€")
+col7.metric("CAC", f"{cac:,.0f}€")
 col8.metric("LTV/CAC", f"{ltv_cac:.2f}")
 
 # ================= ALERTAS =================
 st.subheader("⚠️ Alertas Inteligentes")
 if margem < 20:
     st.warning("Margem abaixo de 20%")
+if despesa_total < -receita_total * 0.8:
+    st.warning("Despesas muito altas")
 if clientes_ativos_media < 10:
     st.warning("Poucos clientes ativos")
+
+# ================= EVOLUÇÃO FINANCEIRA =================
+st.subheader("📈 Evolução Financeira")
+if not receitas.empty and not despesas.empty:
+    receita_mes = receitas.groupby("Periodo")["Valor"].sum()
+    despesa_mes = despesas.groupby("Periodo")["Valor"].sum()
+
+    df_fin = pd.DataFrame({
+        "Receita": receita_mes,
+        "Despesa": despesa_mes
+    }).fillna(0)
+
+    df_fin["Lucro"] = df_fin["Receita"] + df_fin["Despesa"]
+
+    fig, ax = plt.subplots()
+    df_fin.plot(ax=ax, marker="o")
+    plt.xticks(rotation=45)
+    st.pyplot(fig)
+
+# ================= TOP CLIENTES =================
+st.subheader("🏆 Top Clientes")
+if not receitas.empty:
+    top_clientes = (
+        receitas.groupby("Nome do cliente")["Valor"]
+        .sum()
+        .sort_values(ascending=False)
+        .head(10)
+    )
+    st.dataframe(top_clientes)
+
+# ================= CLIENTES =================
+st.subheader("👥 Evolução de Clientes")
+if not receitas.empty:
+    clientes_por_mes = (
+        receitas.groupby(["Periodo", "ordem_mes"])["Nome do cliente"]
+        .nunique()
+        .reset_index()
+        .sort_values("ordem_mes")
+    )
+
+    fig, ax = plt.subplots()
+    ax.plot(clientes_por_mes["Periodo"], clientes_por_mes["Nome do cliente"], marker="o")
+    plt.xticks(rotation=45)
+    st.pyplot(fig)
+
+# ================= MODALIDADE =================
+st.subheader("🏋️ Clientes por Modalidade")
+if not receitas.empty:
+    clientes_modalidade = receitas.groupby("Modalidade")["Nome do cliente"].nunique().sort_values(ascending=False)
+    st.dataframe(clientes_modalidade)
+
+    fig_mod, ax_mod = plt.subplots()
+    clientes_modalidade.plot(kind="barh", ax=ax_mod)
+    st.pyplot(fig_mod)
+
+# ================= TABS =================
+tab1, tab2, tab3 = st.tabs(["📊 Visão Geral", "💰 Receitas", "💸 Despesas"])
+
+with tab2:
+    for cat in ["Modalidade", "Tipo", "Professor", "Local"]:
+        bloco = gerar_pivot(receitas, cat)
+        st.dataframe(bloco)
+
+        fig = grafico_bar(bloco, f"Receitas por {cat}")
+        st.pyplot(fig)
+
+        capturar_grafico(fig, f"Receitas por {cat}", bloco)
+
+with tab3:
+    for cat in ["Classe", "Local"]:
+        bloco = gerar_pivot(despesas, cat)
+        st.dataframe(bloco)
+
+        fig = grafico_bar(bloco, f"Despesas por {cat}")
+        st.pyplot(fig)
+
+        capturar_grafico(fig, f"Despesas por {cat}", bloco)
+
+# ================= EXPORT =================
+st.subheader("📄 Exportações")
+
+def gerar_pdf(figs):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elementos = []
+
+    for titulo, fig, _ in figs:
+        elementos.append(Paragraph(titulo, styles["Heading2"]))
+
+        img = BytesIO()
+        fig.savefig(img, format="png", bbox_inches="tight")
+        img.seek(0)
+
+        elementos.append(Image(img, width=16*cm, height=8*cm))
+        elementos.append(PageBreak())
+
+    doc.build(elementos)
+    buffer.seek(0)
+    return buffer
+
+
+def gerar_ppt(figs):
+    prs = Presentation()
+
+    for titulo, _, pivot in figs:
+        slide = prs.slides.add_slide(prs.slide_layouts[5])
+        slide.shapes.title.text = titulo
+
+        chart_data = CategoryChartData()
+        chart_data.categories = list(pivot.index)
+
+        for col in pivot.columns:
+            chart_data.add_series(str(col), list(pivot[col].values))
+
+        slide.shapes.add_chart(
+            XL_CHART_TYPE.BAR_CLUSTERED,
+            Inches(1), Inches(2), Inches(8), Inches(4),
+            chart_data
+        )
+
+    buffer = BytesIO()
+    prs.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("📄 Gerar PDF Completo"):
+        st.download_button("Download PDF", gerar_pdf(figs_pdf), "relatorio.pdf")
+
+with col2:
+    if st.button("📊 Gerar PPT Editável"):
+        st.download_button("Download PPT", gerar_ppt(figs_pdf), "relatorio.pptx")
 
 # ================= FOOTER =================
 st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
