@@ -173,7 +173,7 @@ ticket_medio_despesa = abs(despesa_media) / clientes_ativos_media if clientes_at
 magic_number = abs(despesa_media)
 
 cac = abs(despesa_media) / clientes_ativos_media if clientes_ativos_media else 0
-ltv = ticket_medio_receita * 6 if ticket_medio_receita else 0
+ltv = ticket_medio_receita * 60 if ticket_medio_receita else 0
 ltv_cac = (ltv / cac) if cac else 0
 
 # KPIs em colunas
